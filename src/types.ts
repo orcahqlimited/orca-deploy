@@ -41,6 +41,8 @@ export interface DeployContext {
   jwtSigningKey?: string;
   connectorFqdns: Record<string, string>;  // slug → fqdn
   orcaAcrToken?: string;
+  licenseServiceEndpoint?: string;
+  licenseTokens: Record<string, string>;   // connector-slug → licence JWT
 }
 
 export interface PreflightResult {

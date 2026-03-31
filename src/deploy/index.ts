@@ -8,6 +8,7 @@ import { createEnvironment } from './environment.js';
 import { importImages } from './images.js';
 import { createContainerApps } from './containers.js';
 import { runHealthChecks, printSummary } from './health.js';
+import { provisionLicenses } from './licenses.js';
 import * as log from '../utils/log.js';
 import chalk from 'chalk';
 
@@ -28,6 +29,9 @@ export async function deploy(ctx: DeployContext): Promise<void> {
 
     // Step 5: Entra App Registration
     await createEntraApp(ctx);
+
+    // Step 5b: Provision ORCA licences (after Key Vault, before containers)
+    await provisionLicenses(ctx);
 
     // Step 6: Container Apps Environment
     await createEnvironment(ctx);

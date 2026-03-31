@@ -26,6 +26,14 @@ export async function createContainerApps(ctx: DeployContext): Promise<void> {
       // CONNECTOR_URL set after creation (need FQDN)
     ];
 
+    // Add licence env vars if licences were provisioned
+    if (ctx.licenseServiceEndpoint) {
+      envVars.push(`ORCA_LICENSE_ENDPOINT=${ctx.licenseServiceEndpoint}`);
+    }
+    if (ctx.licenseTokens[connector.slug]) {
+      envVars.push(`ORCA_LICENSE_TOKEN=secretref:orca-license-${connector.slug}`);
+    }
+
     // Add connector-specific secret refs
     for (const secret of connector.secrets) {
       if (ctx.credentials[secret.kv]) {
@@ -64,6 +72,13 @@ export async function createContainerApps(ctx: DeployContext): Promise<void> {
           `${secret.kv}=keyvaultref:https://${ctx.keyVaultName}.vault.azure.net/secrets/${secret.kv},identityref:${ctx.miId}`
         );
       }
+    }
+
+    // Add licence token KV reference if provisioned
+    if (ctx.licenseTokens[connector.slug]) {
+      kvSecrets.push(
+        `orca-license-${connector.slug}=keyvaultref:https://${ctx.keyVaultName}.vault.azure.net/secrets/orca-license-${connector.slug},identityref:${ctx.miId}`
+      );
     }
 
     await azQuiet(`containerapp secret set --name ${appName} --resource-group ${ctx.resourceGroup} --secrets ${kvSecrets.map(s => `"${s}"`).join(' ')}`);

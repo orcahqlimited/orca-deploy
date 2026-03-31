@@ -42,6 +42,7 @@ async function main(): Promise<void> {
     selectedConnectors,
     credentials: {},
     connectorFqdns: {},
+    licenseTokens: {},
   };
 
   // 6. Pre-flight Checks
