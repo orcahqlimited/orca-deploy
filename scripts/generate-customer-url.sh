@@ -26,17 +26,18 @@ echo ""
 # Calculate expiry date
 EXPIRY=$(date -u -v+${DAYS}d '+%Y-%m-%dT%H:%MZ' 2>/dev/null || date -u -d "+${DAYS} days" '+%Y-%m-%dT%H:%MZ')
 
-# Generate SAS URL
+# Get account key and generate SAS URL
+KEY=$(az storage account keys list --account-name "$ACCOUNT" --query "[0].value" -o tsv)
+
 SAS_URL=$(az storage blob generate-sas \
   --account-name "$ACCOUNT" \
+  --account-key "$KEY" \
   --container-name "$CONTAINER" \
   --name "$BLOB" \
   --permissions r \
   --expiry "$EXPIRY" \
-  --auth-mode login \
-  --as-user \
   --full-uri \
-  -o tsv 2>&1)
+  -o tsv)
 
 echo "  ────────────────────────────────────"
 echo "  Send the following to ${CUSTOMER}:"
