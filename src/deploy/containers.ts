@@ -12,43 +12,27 @@ export async function createContainerApps(ctx: DeployContext): Promise<void> {
 
     const s = log.spinner(`Creating ${connector.name} Container App`);
 
-    // Build env vars — shared
-    const envVars = [
+    // Step 1: Plain env vars (no secret refs) — safe for create or update
+    const plainEnvVars = [
       'DEV_MODE=false',
       'PORT=3000',
       'NODE_ENV=production',
       'APPINSIGHTS_ENABLE_REQUEST_BODY=false',
       `TENANT_ID=${ctx.tenantId}`,
       `CLIENT_ID=${ctx.entraAppId}`,
-      'CLIENT_SECRET=secretref:entra-client-secret',
-      'JWT_SIGNING_KEY=secretref:connector-jwt-key',
       'ALLOWED_ROLES=ORCA.Founder,ORCA.Director',
-      // CONNECTOR_URL set after creation (need FQDN)
     ];
 
-    // Add licence env vars if licences were provisioned
     if (ctx.licenseServiceEndpoint) {
-      envVars.push(`ORCA_LICENSE_ENDPOINT=${ctx.licenseServiceEndpoint}`);
-    }
-    if (ctx.licenseTokens[connector.slug]) {
-      envVars.push(`ORCA_LICENSE_TOKEN=secretref:orca-license-${connector.slug}`);
-    }
-
-    // Add connector-specific secret refs
-    for (const secret of connector.secrets) {
-      if (ctx.credentials[secret.kv]) {
-        envVars.push(`${secret.env}=secretref:${secret.kv}`);
-      }
+      plainEnvVars.push(`ORCA_LICENSE_ENDPOINT=${ctx.licenseServiceEndpoint}`);
     }
 
     // Check if the container app already exists
     const existing = await az(`containerapp show --name ${appName} --resource-group ${ctx.resourceGroup}`);
     if (existing.exitCode === 0) {
-      // App exists — update image and env vars instead of creating
       s.text = `Updating existing ${connector.name} Container App`;
-      await azQuiet(`containerapp update --name ${appName} --resource-group ${ctx.resourceGroup} --image ${image} --set-env-vars ${envVars.join(' ')}`);
+      await azQuiet(`containerapp update --name ${appName} --resource-group ${ctx.resourceGroup} --image ${image} --set-env-vars ${plainEnvVars.join(' ')}`);
     } else {
-      // Create new container app
       await azQuiet([
         `containerapp create`,
         `--name ${appName}`,
@@ -61,15 +45,15 @@ export async function createContainerApps(ctx: DeployContext): Promise<void> {
         `--registry-server ${ctx.acrLoginServer}`,
         `--registry-identity "${ctx.miId}"`,
         `--user-assigned "${ctx.miId}"`,
-        `--env-vars ${envVars.join(' ')}`,
+        `--env-vars ${plainEnvVars.join(' ')}`,
       ].join(' '));
     }
 
-    // Get the FQDN
+    // Step 2: Get the FQDN
     const fqdn = await azTsv(`containerapp show --name ${appName} --resource-group ${ctx.resourceGroup} --query "properties.configuration.ingress.fqdn"`);
     ctx.connectorFqdns[connector.slug] = fqdn;
 
-    // Now set KV-referenced secrets on the Container App
+    // Step 3: Bind KV secrets to the container app (must happen BEFORE env vars reference them)
     const kvSecrets = [
       `entra-client-secret=keyvaultref:https://${ctx.keyVaultName}.vault.azure.net/secrets/entra-client-secret,identityref:${ctx.miId}`,
       `connector-jwt-key=keyvaultref:https://${ctx.keyVaultName}.vault.azure.net/secrets/connector-jwt-key,identityref:${ctx.miId}`,
@@ -81,8 +65,6 @@ export async function createContainerApps(ctx: DeployContext): Promise<void> {
         );
       }
     }
-
-    // Add licence token KV reference if provisioned
     if (ctx.licenseTokens[connector.slug]) {
       kvSecrets.push(
         `orca-license-${connector.slug}=keyvaultref:https://${ctx.keyVaultName}.vault.azure.net/secrets/orca-license-${connector.slug},identityref:${ctx.miId}`
@@ -91,8 +73,22 @@ export async function createContainerApps(ctx: DeployContext): Promise<void> {
 
     await azQuiet(`containerapp secret set --name ${appName} --resource-group ${ctx.resourceGroup} --secrets ${kvSecrets.map(s => `"${s}"`).join(' ')}`);
 
-    // Update with CONNECTOR_URL now that we have the FQDN
-    const allEnvVars = [...envVars, `CONNECTOR_URL=https://${fqdn}`];
+    // Step 4: Now set the full env vars including secret refs (secrets are bound, refs will resolve)
+    const allEnvVars = [
+      ...plainEnvVars,
+      'CLIENT_SECRET=secretref:entra-client-secret',
+      'JWT_SIGNING_KEY=secretref:connector-jwt-key',
+      `CONNECTOR_URL=https://${fqdn}`,
+    ];
+    for (const secret of connector.secrets) {
+      if (ctx.credentials[secret.kv]) {
+        allEnvVars.push(`${secret.env}=secretref:${secret.kv}`);
+      }
+    }
+    if (ctx.licenseTokens[connector.slug]) {
+      allEnvVars.push(`ORCA_LICENSE_TOKEN=secretref:orca-license-${connector.slug}`);
+    }
+
     await azQuiet(`containerapp update --name ${appName} --resource-group ${ctx.resourceGroup} --set-env-vars ${allEnvVars.join(' ')}`);
 
     s.succeed(`  ${connector.name} deployed (${fqdn})`);
