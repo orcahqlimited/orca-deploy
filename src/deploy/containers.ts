@@ -1,5 +1,5 @@
 import type { DeployContext } from '../types.js';
-import { azQuiet, azTsv } from '../utils/az.js';
+import { az, azQuiet, azTsv } from '../utils/az.js';
 import { IMAGE_TAGS, ORCA_HQ_ACR } from '../utils/config.js';
 import * as naming from '../utils/naming.js';
 import * as log from '../utils/log.js';
@@ -41,21 +41,29 @@ export async function createContainerApps(ctx: DeployContext): Promise<void> {
       }
     }
 
-    // Create the Container App
-    await azQuiet([
-      `containerapp create`,
-      `--name ${appName}`,
-      `--resource-group ${ctx.resourceGroup}`,
-      `--environment ${ctx.caEnvironment}`,
-      `--image ${image}`,
-      `--ingress external --target-port 3000`,
-      `--min-replicas 1 --max-replicas 3`,
-      `--cpu 0.25 --memory 0.5Gi`,
-      `--registry-server ${ctx.acrLoginServer}`,
-      `--registry-identity "${ctx.miId}"`,
-      `--user-assigned "${ctx.miId}"`,
-      `--env-vars ${envVars.join(' ')}`,
-    ].join(' '));
+    // Check if the container app already exists
+    const existing = await az(`containerapp show --name ${appName} --resource-group ${ctx.resourceGroup}`);
+    if (existing.exitCode === 0) {
+      // App exists — update image and env vars instead of creating
+      s.text = `Updating existing ${connector.name} Container App`;
+      await azQuiet(`containerapp update --name ${appName} --resource-group ${ctx.resourceGroup} --image ${image} --set-env-vars ${envVars.join(' ')}`);
+    } else {
+      // Create new container app
+      await azQuiet([
+        `containerapp create`,
+        `--name ${appName}`,
+        `--resource-group ${ctx.resourceGroup}`,
+        `--environment ${ctx.caEnvironment}`,
+        `--image ${image}`,
+        `--ingress external --target-port 3000`,
+        `--min-replicas 1 --max-replicas 3`,
+        `--cpu 0.25 --memory 0.5Gi`,
+        `--registry-server ${ctx.acrLoginServer}`,
+        `--registry-identity "${ctx.miId}"`,
+        `--user-assigned "${ctx.miId}"`,
+        `--env-vars ${envVars.join(' ')}`,
+      ].join(' '));
+    }
 
     // Get the FQDN
     const fqdn = await azTsv(`containerapp show --name ${appName} --resource-group ${ctx.resourceGroup} --query "properties.configuration.ingress.fqdn"`);

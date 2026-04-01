@@ -1,11 +1,39 @@
 import crypto from 'node:crypto';
 import type { DeployContext } from '../types.js';
-import { azJson, azQuiet, azTsv } from '../utils/az.js';
+import { az, azJson, azQuiet, azTsv } from '../utils/az.js';
 import { ENTRA_APP_ROLES } from '../utils/config.js';
 import * as log from '../utils/log.js';
 
 export async function createEntraApp(ctx: DeployContext): Promise<void> {
   const s = log.spinner('Entra App Registration: ORCA Intelligence Connectors');
+
+  // Check if the app already exists
+  try {
+    const existing = await azJson(
+      `ad app list --display-name "ORCA Intelligence Connectors" --query "[0].{appId:appId, id:id}"`
+    );
+    if (existing && existing.appId) {
+      // App exists — reuse it
+      ctx.entraAppId = existing.appId;
+
+      // Ensure we have the client secret in Key Vault (may already be there)
+      try {
+        const existingSecret = await azTsv(`keyvault secret show --vault-name ${ctx.keyVaultName} --name entra-client-secret --query value`);
+        ctx.entraClientSecret = existingSecret;
+      } catch {
+        // Secret missing — generate a new one
+        const cred = await azJson(
+          `ad app credential reset --id ${existing.appId} --display-name "orca-deploy-cli" --years 2 --query "{password:password}"`
+        );
+        ctx.entraClientSecret = cred.password;
+        await azQuiet(`keyvault secret set --vault-name ${ctx.keyVaultName} --name entra-client-id --value "${existing.appId}"`);
+        await azQuiet(`keyvault secret set --vault-name ${ctx.keyVaultName} --name entra-client-secret --value "${cred.password.replace(/"/g, '\\"')}"`);
+      }
+
+      s.succeed('  Entra App Registration: ORCA Intelligence Connectors (existing — reused)');
+      return;
+    }
+  } catch { /* no existing app — create one */ }
 
   // Build app roles JSON
   const appRoles = ENTRA_APP_ROLES.map(r => ({

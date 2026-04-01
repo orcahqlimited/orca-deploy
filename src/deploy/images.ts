@@ -12,7 +12,7 @@ export async function importImages(ctx: DeployContext): Promise<void> {
     const s = log.spinner(`Importing ${connector.name} image (${tag})`);
 
     await azQuiet(
-      `acr import --name ${ctx.acrName} --source ${source} --image ${target} --username orca-deploy-token --password "${ctx.orcaAcrToken}"`
+      `acr import --name ${ctx.acrName} --source ${source} --image ${target} --username orca-deploy-token --password "${ctx.orcaAcrToken}" --force`
     );
 
     s.succeed(`  ${connector.name} image imported (${tag})`);
