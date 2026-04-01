@@ -1,5 +1,5 @@
 import type { DeployContext } from '../types.js';
-import { azQuiet, azTsv } from '../utils/az.js';
+import { az, azQuiet, azTsv } from '../utils/az.js';
 import * as naming from '../utils/naming.js';
 import * as log from '../utils/log.js';
 
@@ -14,8 +14,11 @@ export async function createAcr(ctx: DeployContext): Promise<void> {
   ctx.acrName = acr;
   ctx.acrLoginServer = loginServer;
 
-  // Import base image — --force overwrites if already exists (CL-2026-0066: Docker Hub rate limits)
-  await azQuiet(`acr import --name ${acr} --source docker.io/library/node:20-slim --image node:20-slim --force`);
+  // Import base image — skip if already present (CL-2026-0066: Docker Hub rate limits)
+  const imageCheck = await az(`acr repository show-tags --name ${acr} --repository node --query "[?contains(@, '20-slim')]" --top 1`);
+  if (imageCheck.exitCode !== 0 || imageCheck.stdout.trim() === '[]') {
+    await azQuiet(`acr import --name ${acr} --source docker.io/library/node:20-slim --image node:20-slim`);
+  }
 
   s.succeed(`  Container Registry: ${acr} (base image imported)`);
 }
