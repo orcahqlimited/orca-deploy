@@ -10,7 +10,7 @@ set -euo pipefail
 
 CUSTOMER="${1:-customer}"
 DAYS="${2:-7}"
-VERSION="0.1.0"
+VERSION="0.2.0"
 ACCOUNT="orcahqblobsuks"
 CONTAINER="releases"
 BLOB="orca-deploy-v${VERSION}.tar.gz"
