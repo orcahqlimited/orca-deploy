@@ -36,7 +36,7 @@ export async function checkSubscriptionRoles(subscriptionId: string): Promise<Pr
 export async function checkEntraRole(): Promise<PreflightResult> {
   try {
     const memberships: { '@odata.type': string; displayName: string }[] = await azJson(
-      `rest --method GET --uri "https://graph.microsoft.com/v1.0/me/memberOf?\\$select=displayName" --headers "ConsistencyLevel=eventual" --query "value"`
+      `rest --method GET --uri "https://graph.microsoft.com/v1.0/me/memberOf" --headers "ConsistencyLevel=eventual" --query "value"`
     );
 
     const roleNames = memberships
