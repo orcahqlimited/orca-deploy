@@ -11,16 +11,24 @@ export async function collectCredentials(connectors: ConnectorDef[]): Promise<Re
     log.blank();
 
     for (const secret of connector.secrets) {
-      const promptFn = secret.masked ? password : input;
-      const value = await promptFn({
-        message: `${secret.label}:`,
-        validate: (val: string) => {
-          // ADO project is optional
-          if (secret.kv === 'ado-project' || secret.kv === 'isms-base-url') return true;
-          if (!val.trim()) return `${secret.label} is required`;
-          return true;
-        },
-      });
+      const value = secret.masked
+        ? await password({
+            message: `${secret.label}:`,
+            mask: '*',
+            validate: (val: string) => {
+              if (secret.kv === 'ado-project' || secret.kv === 'isms-base-url') return true;
+              if (!val.trim()) return `${secret.label} is required`;
+              return true;
+            },
+          })
+        : await input({
+            message: `${secret.label}:`,
+            validate: (val: string) => {
+              if (secret.kv === 'ado-project' || secret.kv === 'isms-base-url') return true;
+              if (!val.trim()) return `${secret.label} is required`;
+              return true;
+            },
+          });
       credentials[secret.kv] = value.trim();
     }
 

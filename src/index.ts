@@ -60,6 +60,7 @@ async function main(): Promise<void> {
   log.dim('This token is provided by ORCA HQ and has read-only access to RC images.');
   ctx.orcaAcrToken = await password({
     message: 'ORCA HQ ACR deployment token:',
+    mask: '*',
   });
 
   // 9. Confirm
