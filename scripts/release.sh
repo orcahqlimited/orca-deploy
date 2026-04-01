@@ -23,8 +23,9 @@ npm run build
 # Package
 echo "  Packaging..."
 rm -rf /tmp/orca-deploy-pkg
-mkdir -p /tmp/orca-deploy-pkg/orca-deploy
-cp -r dist/ package.json package-lock.json /tmp/orca-deploy-pkg/orca-deploy/
+mkdir -p /tmp/orca-deploy-pkg/orca-deploy/dist
+cp -r dist/* /tmp/orca-deploy-pkg/orca-deploy/dist/
+cp package.json package-lock.json /tmp/orca-deploy-pkg/orca-deploy/
 cd /tmp/orca-deploy-pkg
 tar czf /tmp/${BLOB} orca-deploy/
 
