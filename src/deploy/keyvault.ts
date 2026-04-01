@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { DeployContext } from '../types.js';
-import { azQuiet, azTsv } from '../utils/az.js';
+import { az, azQuiet, azTsv } from '../utils/az.js';
 import * as naming from '../utils/naming.js';
 import * as log from '../utils/log.js';
 
@@ -8,8 +8,11 @@ export async function createKeyVault(ctx: DeployContext): Promise<void> {
   const kv = naming.keyVaultName(ctx.customerSlug, ctx.region);
   const s = log.spinner(`Key Vault: ${kv}`);
 
-  // Create with RBAC authorization
-  await azQuiet(`keyvault create --name ${kv} --resource-group ${ctx.resourceGroup} --location ${ctx.region} --enable-rbac-authorization true`);
+  // Check if Key Vault already exists
+  const existing = await az(`keyvault show --name ${kv}`);
+  if (existing.exitCode !== 0) {
+    await azQuiet(`keyvault create --name ${kv} --resource-group ${ctx.resourceGroup} --location ${ctx.region} --enable-rbac-authorization true`);
+  }
 
   const kvId = await azTsv(`keyvault show --name ${kv} --query id`);
   ctx.keyVaultName = kv;
