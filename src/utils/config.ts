@@ -64,8 +64,8 @@ export const ENTRA_APP_ROLES = [
 
 // RC image tags — updated on each CLI release
 export const IMAGE_TAGS: Record<string, string> = {
-  'orca-freeagent-connector': 'rc-1.0.0',
-  'orca-freshworks-connector': 'rc-1.0.0',
-  'orca-isms-connector': 'rc-1.0.0',
-  'orca-ado-connector': 'rc-1.0.0',
+  'orca-freeagent-connector': 'rc-1.0.1',
+  'orca-freshworks-connector': 'rc-1.0.1',
+  'orca-isms-connector': 'rc-1.0.1',
+  'orca-ado-connector': 'rc-1.0.1',
 };
