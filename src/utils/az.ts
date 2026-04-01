@@ -41,6 +41,11 @@ export async function azTsv(command: string): Promise<string> {
 export async function azQuiet(command: string): Promise<void> {
   const result = await az(`${command} -o none`);
   if (result.exitCode !== 0) {
-    throw new Error(`az ${command} failed: ${result.stderr}`);
+    // Azure CLI writes warnings to stderr even on success.
+    // Only throw if stderr contains an actual ERROR line.
+    const hasRealError = result.stderr.split('\n').some(line => line.startsWith('ERROR:'));
+    if (hasRealError) {
+      throw new Error(`az ${command} failed: ${result.stderr}`);
+    }
   }
 }
