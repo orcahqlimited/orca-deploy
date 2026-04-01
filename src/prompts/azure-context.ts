@@ -42,9 +42,15 @@ export async function selectTenant(): Promise<{ tenantId: string; tenantName: st
     tenantName = tenantMap.get(tenantId) || '';
   }
 
-  // Ensure we're logged into the right tenant
-  log.dim('Switching tenant context...');
-  await azQuiet(`login --tenant ${tenantId}`);
+  // Check if we're already in the right tenant before attempting login
+  // (az login --tenant hangs in Azure Cloud Shell when already authenticated)
+  const currentAccount: AzAccount = await azJson('account show --query "{name:name, id:id, tenantId:tenantId, isDefault:isDefault}"');
+  if (currentAccount.tenantId === tenantId) {
+    log.dim('Already in correct tenant — skipping login');
+  } else {
+    log.dim('Switching tenant context...');
+    await azQuiet(`login --tenant ${tenantId}`);
+  }
 
   return { tenantId, tenantName };
 }
