@@ -1,0 +1,18 @@
+properties:
+  template:
+    volumes:
+      - name: qdrant-storage
+        storageType: AzureFile
+        storageName: qdrant-storage
+    containers:
+      - name: qdrant
+        image: orcahqacruks.azurecr.io/qdrant:amd64
+        resources:
+          cpu: 0.5
+          memory: 1.0Gi
+        env:
+          - name: QDRANT__STORAGE__STORAGE_PATH
+            value: /qdrant/storage
+        volumeMounts:
+          - volumeName: qdrant-storage
+            mountPath: /qdrant/storage
