@@ -51,6 +51,17 @@ export const CONNECTORS: ConnectorDef[] = [
       { kv: 'ado-project', env: 'ADO_PROJECT', label: 'ADO Project name (optional, e.g. "MyProject")', masked: false },
     ],
   },
+  {
+    slug: 'azure-security',
+    name: 'Azure Security',
+    description: '36 tools — security posture, cost, and advisor intelligence (Microsoft Graph)',
+    toolCount: 36,
+    image: 'orca-azure-security-connector',
+    secrets: [
+      { kv: 'security-graph-client-id', env: 'GRAPH_CLIENT_ID', label: 'Graph API Client ID (app registration with Security read permissions)', masked: false },
+      { kv: 'security-graph-client-secret', env: 'GRAPH_CLIENT_SECRET', label: 'Graph API Client Secret', masked: true },
+    ],
+  },
 ];
 
 // Entra App Roles — created on every deployment
@@ -68,4 +79,5 @@ export const IMAGE_TAGS: Record<string, string> = {
   'orca-freshworks-connector': 'rc-1.0.1',
   'orca-isms-connector': 'rc-1.0.1',
   'orca-ado-connector': 'rc-1.0.1',
+  'orca-azure-security-connector': 'rc-1.0.0',
 };
