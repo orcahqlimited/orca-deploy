@@ -16,7 +16,7 @@ export MI_CLIENT="e0de1225-67f4-4298-aef7-a8d233a62540"
 export QDRANT_STORAGE="orcahqqdrantstorage"
 export TENANT="27525d97-58a8-4d55-ba8c-696f769f97f6"
 export APP_ID="06570e63-9cb0-455e-9af4-483e97503880"
-export GATEWAY_URL="https://orca-mcp-gateway.icyplant-8c8bf272.uksouth.azurecontainerapps.io"
+export GATEWAY_URL="https://gateway.orcahq.ai"
 export QDRANT_URL="https://qdrant.icyplant-8c8bf272.uksouth.azurecontainerapps.io"
 
 # Key Vault helpers (Mac Python TLS workaround)
