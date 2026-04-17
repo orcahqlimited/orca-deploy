@@ -11,6 +11,6 @@ export function showBanner(): void {
   console.log(chalk.cyan(`  \\____/|_| \\_\\\\____/_/   \\_\\`));
   console.log('');
   console.log(chalk.white.bold('  Intelligence Connectors'));
-  console.log(chalk.dim(`  powered by ORCAHQ  v${VERSION}`));
+  console.log(chalk.dim(`  powered by ORCA HQ  v${VERSION}`));
   console.log('');
 }

@@ -81,7 +81,7 @@ export async function runHealthChecks(ctx: DeployContext): Promise<boolean> {
 export function printSummary(ctx: DeployContext): void {
   log.blank();
   console.log(chalk.cyan.bold('  ════════════════════════════════════════════════════'));
-  console.log(chalk.cyan.bold('  ORCA Intelligence Connectors — Deployment Complete'));
+  console.log(chalk.cyan.bold('  ORCA HQ Intelligence Connectors — Deployment Complete'));
   console.log(chalk.cyan.bold('  ════════════════════════════════════════════════════'));
   log.blank();
   console.log(`  Tenant:       ${chalk.white(ctx.tenantName)} ${chalk.dim(`(${ctx.tenantId})`)}`);
