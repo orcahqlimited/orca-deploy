@@ -52,7 +52,19 @@ export interface DeployContext {
   eligibilityGroupOid?: string;         // ORCA-Eligible group OID
   graphSubscriptionId?: string;         // Graph change-notification subscription id
   graphClientState?: string;            // Random client state shared with gateway
+  // Core product Container App FQDNs
+  gatewayFqdn?: string;
   gatewayUrl?: string;                  // Customer's deployed gateway URL (https://...)
+  copilotFqdn?: string;
+  copilotUrl?: string;
+  copilotEntraAppId?: string;
+  copilotEntraClientSecret?: string;
+  governancePortalFqdn?: string;
+  governancePortalUrl?: string;
+  licenseServiceFqdn?: string;
+  // Gateway-specific secrets
+  heartbeatSecret?: string;
+  graphWebhookClientState?: string;
 }
 
 export interface PreflightResult {

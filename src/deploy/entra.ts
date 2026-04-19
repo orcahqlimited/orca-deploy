@@ -4,6 +4,19 @@ import { az, azJson, azQuiet, azTsv } from '../utils/az.js';
 import { ENTRA_APP_ROLES } from '../utils/config.js';
 import * as log from '../utils/log.js';
 
+// Microsoft Graph resource app id
+const GRAPH_RESOURCE_ID = '00000003-0000-0000-c000-000000000000';
+
+// Graph application (Role) permissions required for ORCA meeting capture.
+// Role IDs sourced from Microsoft Graph service principal.
+export const GRAPH_APP_PERMISSIONS: Array<{ name: string; id: string }> = [
+  { name: 'CallRecords.Read.All',           id: '45bbb07e-7321-4fd7-a8f6-3ff27e6a81c8' },
+  { name: 'OnlineMeetings.Read.All',        id: 'c1684f21-1984-47fa-9d61-2dc8c296bb70' },
+  { name: 'OnlineMeetingTranscript.Read.All', id: 'a4a80d8d-d283-4bd8-8504-555ec3870630' },
+  { name: 'User.Read.All',                  id: 'df021288-bdef-4463-88db-98f22de89214' },
+  { name: 'GroupMember.Read.All',           id: '98830695-27a2-44f7-8c18-0c3ebc9698f6' },
+];
+
 export async function createEntraApp(ctx: DeployContext): Promise<void> {
   const s = log.spinner('Entra App Registration: ORCA Intelligence Connectors');
 

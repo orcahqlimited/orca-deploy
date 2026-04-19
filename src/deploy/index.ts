@@ -9,6 +9,12 @@ import { importImages } from './images.js';
 import { createContainerApps } from './containers.js';
 import { runHealthChecks, printSummary } from './health.js';
 import { provisionLicenses } from './licenses.js';
+import {
+  createEligibilityGroup,
+  addGraphPermissions,
+  createGraphSubscription,
+  grantApplicationAccessPolicy,
+} from './rbac-graph.js';
 import * as log from '../utils/log.js';
 import chalk from 'chalk';
 
@@ -30,8 +36,19 @@ export async function deploy(ctx: DeployContext): Promise<void> {
     // Step 5: Entra App Registration
     await createEntraApp(ctx);
 
+    // Step 5a: Extend the ORCA Entra app with Graph permissions for meeting capture
+    //          (idempotent; admin consent may require Global Admin — warns + continues)
+    await addGraphPermissions(ctx);
+
     // Step 5b: Provision ORCA licences (after Key Vault, before containers)
     await provisionLicenses(ctx);
+
+    // Step 5c: ORCA-Eligible Entra group (gates who receives a personal brain)
+    await createEligibilityGroup(ctx);
+
+    // Step 5e: Teams CsApplicationAccessPolicy (can run once the Entra app exists;
+    //          PowerShell-dependent — prints manual fallback if pwsh is missing)
+    await grantApplicationAccessPolicy(ctx);
 
     // Step 6: Container Apps Environment
     await createEnvironment(ctx);
@@ -44,6 +61,11 @@ export async function deploy(ctx: DeployContext): Promise<void> {
 
     // Step 8b: Update Entra redirect URIs with connector callback URLs
     await updateEntraRedirectUris(ctx);
+
+    // Step 8c: Graph subscription for transcript notifications.
+    //          Requires the gateway to be deployed and ctx.gatewayUrl set. If it
+    //          isn't (connector-only deploys), this step is skipped with a warn.
+    await createGraphSubscription(ctx);
 
     // Step 9: Health checks
     log.blank();
