@@ -80,4 +80,17 @@ export const IMAGE_TAGS: Record<string, string> = {
   'orca-isms-connector': 'rc-1.0.1',
   'orca-ado-connector': 'rc-1.0.1',
   'orca-azure-security-connector': 'rc-1.0.0',
+  // Core product images — pinned tags, updated on each CLI release
+  'orca-mcp-gateway': 'rc-1.0.0',
+  'orca-copilot': 'rc-1.0.0',
+  'orca-governance-portal': 'rc-1.0.0',
+  'orca-license-service': 'rc-1.0.0',
 };
+
+// Core product images — always deployed (gateway, copilot, governance portal, licence service)
+export const CORE_PRODUCT_IMAGES = [
+  'orca-mcp-gateway',
+  'orca-copilot',
+  'orca-governance-portal',
+  'orca-license-service',
+];

@@ -5,8 +5,10 @@ import { createKeyVault } from './keyvault.js';
 import { createManagedIdentity } from './identity.js';
 import { createEntraApp, updateEntraRedirectUris } from './entra.js';
 import { createEnvironment } from './environment.js';
-import { importImages } from './images.js';
+import { importImages, importCoreProductImages } from './images.js';
 import { createContainerApps } from './containers.js';
+import { deployCoreProduct } from './core-product.js';
+import { deployAksQdrant } from './aks-qdrant.js';
 import { runHealthChecks, printSummary } from './health.js';
 import { provisionLicenses } from './licenses.js';
 import {
@@ -53,11 +55,18 @@ export async function deploy(ctx: DeployContext): Promise<void> {
     // Step 6: Container Apps Environment
     await createEnvironment(ctx);
 
-    // Step 7: Import images from ORCA HQ ACR
-    await importImages(ctx);
+    // Step 6b: AKS cluster + Qdrant — provides QDRANT_URL for the gateway.
+    //          Skipped if the customer is connector-only; deployAksQdrant is
+    //          internally idempotent and logs what it's doing.
+    await deployAksQdrant(ctx);
 
-    // Step 8: Create Container Apps
+    // Step 7: Import images from ORCA HQ ACR — connectors + core product
+    await importImages(ctx);
+    await importCoreProductImages(ctx);
+
+    // Step 8: Create Container Apps — connectors first, then core product
     await createContainerApps(ctx);
+    await deployCoreProduct(ctx);
 
     // Step 8b: Update Entra redirect URIs with connector callback URLs
     await updateEntraRedirectUris(ctx);

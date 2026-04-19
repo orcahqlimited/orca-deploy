@@ -29,3 +29,28 @@ export function caEnvironmentName(customer: string, region: string): string {
 export function connectorAppName(connectorSlug: string): string {
   return `orca-${connectorSlug}-connector`;
 }
+
+// Core product Container App names (customer-tenant-scoped)
+export function gatewayAppName(_customer: string): string {
+  return `orca-mcp-gateway`;
+}
+
+export function copilotAppName(_customer: string): string {
+  return `orca-copilot`;
+}
+
+export function governancePortalAppName(_customer: string): string {
+  return `orca-governance-portal`;
+}
+
+export function licenseServiceAppName(_customer: string): string {
+  return `orca-license-service`;
+}
+
+export function copilotEntraAppName(customer: string): string {
+  return `ORCA Copilot (${customer})`;
+}
+
+export function copilotBotName(_customer: string): string {
+  return `orca-copilot-bot`;
+}
