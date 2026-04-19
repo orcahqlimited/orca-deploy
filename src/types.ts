@@ -43,6 +43,16 @@ export interface DeployContext {
   orcaAcrToken?: string;
   licenseServiceEndpoint?: string;
   licenseTokens: Record<string, string>;   // connector-slug → licence JWT
+  // AKS + Qdrant (optional — core ORCA vector store)
+  aksResourceGroup?: string;
+  aksClusterName?: string;
+  qdrantInternalUrl?: string;
+  // Meeting capture (INTENT-095 / transcript subscription)
+  founderOid?: string;                  // OID of the signed-in deployer (Founder in customer tenant)
+  eligibilityGroupOid?: string;         // ORCA-Eligible group OID
+  graphSubscriptionId?: string;         // Graph change-notification subscription id
+  graphClientState?: string;            // Random client state shared with gateway
+  gatewayUrl?: string;                  // Customer's deployed gateway URL (https://...)
 }
 
 export interface PreflightResult {
