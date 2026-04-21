@@ -74,11 +74,15 @@ export const ENTRA_APP_ROLES = [
 ];
 
 // RC image tags — updated on each CLI release
+//
+// Connectors bumped to rc-1.0.2 on 2026-04-21 to pick up the 7-day access +
+// 90-day refresh token standard (ORCAHQ-MCP-AUTH-STANDARD-001). The older
+// rc-1.0.1 tags were built 2026-04-01 and predate the token-lifetime change.
 export const IMAGE_TAGS: Record<string, string> = {
-  'orca-freeagent-connector': 'rc-1.0.1',
-  'orca-freshworks-connector': 'rc-1.0.1',
-  'orca-isms-connector': 'rc-1.0.1',
-  'orca-ado-connector': 'rc-1.0.1',
+  'orca-freeagent-connector': 'rc-1.0.2',
+  'orca-freshworks-connector': 'rc-1.0.2',
+  'orca-isms-connector': 'rc-1.0.2',
+  'orca-ado-connector': 'rc-1.0.2',
   'orca-azure-security-connector': 'rc-1.0.0',
   // Core product images — pinned tags, updated on each CLI release
   'orca-mcp-gateway': 'rc-1.0.0',
