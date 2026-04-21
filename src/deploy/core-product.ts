@@ -14,6 +14,7 @@ import { az, azQuiet, azTsv, azJson } from '../utils/az.js';
 import { IMAGE_TAGS } from '../utils/config.js';
 import * as naming from '../utils/naming.js';
 import * as log from '../utils/log.js';
+import { bindCustomGatewayDomain } from './custom-domain.js';
 
 // ORCA HQ's support API — tickets route here regardless of customer tenant
 // (see ORCAHQ-CUSTOMER-DEPLOYMENT-001.md §2.2). Not customer-owned.
@@ -536,7 +537,73 @@ export async function deployGovernancePortal(ctx: DeployContext): Promise<void> 
 }
 
 // =============================================================================
-// Orchestrator — run the four core product deploys in dependency order.
+// Governance connector — internal MCP server used by the governance portal to
+// invoke Founder-gated ops (approvals, gardener invokes, etc.). Internal
+// ingress only; no KV secrets. Shares the gateway UAMI (ctx.miId) for ACR pull.
+// =============================================================================
+
+export async function deployGovernanceConnector(ctx: DeployContext): Promise<void> {
+  const appName = naming.governanceConnectorAppName(ctx.customerSlug);
+  const tag = IMAGE_TAGS['orca-governance-connector'] || 'rc-latest';
+  const image = `${ctx.acrLoginServer}/orca-governance-connector:${tag}`;
+
+  const s = log.spinner(`Creating ${appName} Container App`);
+
+  const plainEnvVars = [
+    'NODE_ENV=production',
+    'DEV_MODE=false',
+    'PORT=3000',
+    'APPINSIGHTS_ENABLE_REQUEST_BODY=false',
+    `TENANT_ID=${ctx.tenantId}`,
+    `ENTRA_TENANT_ID=${ctx.tenantId}`,
+    `AZURE_CLIENT_ID=${ctx.miClientId}`,
+    'REQUIRE_ROLE=ORCA.Founder',
+  ];
+  if (ctx.gatewayUrl) {
+    plainEnvVars.push(`GATEWAY_URL=${ctx.gatewayUrl}`);
+  }
+
+  const existing = await az(
+    `containerapp show --name ${appName} --resource-group ${ctx.resourceGroup}`
+  );
+
+  if (existing.exitCode === 0) {
+    s.text = `Updating existing ${appName} Container App`;
+    await azQuiet(
+      `containerapp update --name ${appName} --resource-group ${ctx.resourceGroup} ` +
+        `--image ${image} --set-env-vars ${plainEnvVars.join(' ')}`
+    );
+  } else {
+    await azQuiet(
+      [
+        `containerapp create`,
+        `--name ${appName}`,
+        `--resource-group ${ctx.resourceGroup}`,
+        `--environment ${ctx.caEnvironment}`,
+        `--image ${image}`,
+        `--ingress internal --target-port 3000`,
+        `--min-replicas 1 --max-replicas 1`,
+        `--cpu 0.25 --memory 0.5Gi`,
+        `--registry-server ${ctx.acrLoginServer}`,
+        `--registry-identity "${ctx.miId}"`,
+        `--user-assigned "${ctx.miId}"`,
+        `--env-vars ${plainEnvVars.join(' ')}`,
+      ].join(' ')
+    );
+  }
+
+  const fqdn = await azTsv(
+    `containerapp show --name ${appName} --resource-group ${ctx.resourceGroup} ` +
+      `--query "properties.configuration.ingress.fqdn"`
+  );
+  ctx.governanceConnectorFqdn = fqdn;
+  ctx.governanceConnectorUrl = `https://${fqdn}`;
+
+  s.succeed(`  ${appName} deployed (${fqdn})`);
+}
+
+// =============================================================================
+// Orchestrator — run the core product deploys in dependency order.
 // =============================================================================
 
 export async function deployCoreProduct(ctx: DeployContext): Promise<void> {
@@ -548,8 +615,21 @@ export async function deployCoreProduct(ctx: DeployContext): Promise<void> {
   //    Uncomment when customer opts into local licence service:
   //    await deployLicenseService(ctx);
 
-  // 2. Gateway — needs qdrantInternalUrl, eligibilityGroupOid, entraAppId
+  // 2. Gateway — needs qdrantInternalUrl, eligibilityGroupOid, entraAppId.
+  //    First pass produces ctx.gatewayFqdn; if a custom domain was requested,
+  //    we bind it immediately so every downstream deploy uses the custom URL.
   await deployGateway(ctx);
+
+  // 2b. Optional — bind custom domain (CNAME + managed cert). Flips
+  //     ctx.gatewayUrl to https://<custom> when successful. If the operator
+  //     hasn't set up DNS yet they can skip at the prompt and re-run later.
+  if (ctx.customGatewayDomain) {
+    await bindCustomGatewayDomain(ctx);
+    // Re-deploy gateway so its GATEWAY_URL env var matches the custom host.
+    if (ctx.customGatewayDomainBound) {
+      await deployGateway(ctx);
+    }
+  }
 
   // 3. Copilot — needs gatewayUrl so MCP_GATEWAY_URL can be wired
   await deployCopilot(ctx);
@@ -557,6 +637,9 @@ export async function deployCoreProduct(ctx: DeployContext): Promise<void> {
   // 4. Re-deploy gateway to pick up COPILOT_URL (fast idempotent update)
   await deployGateway(ctx);
 
-  // 5. Governance portal — needs gatewayUrl
+  // 5. Governance connector — internal MCP server, needs gatewayUrl
+  await deployGovernanceConnector(ctx);
+
+  // 6. Governance portal — needs gatewayUrl (and optionally connector URL)
   await deployGovernancePortal(ctx);
 }

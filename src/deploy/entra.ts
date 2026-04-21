@@ -105,6 +105,16 @@ export async function updateEntraRedirectUris(ctx: DeployContext): Promise<void>
     uris.push(`https://${fqdn}/oauth/callback`);
   }
 
+  // Gateway OAuth callbacks — both Azure-assigned FQDN and, if bound, the
+  // customer's custom domain. Both must be registered so either hostname
+  // can complete OAuth flows.
+  if (ctx.gatewayFqdn) {
+    uris.push(`https://${ctx.gatewayFqdn}/api/mcp/auth_callback`);
+  }
+  if (ctx.customGatewayDomainBound && ctx.customGatewayDomain) {
+    uris.push(`https://${ctx.customGatewayDomain}/api/mcp/auth_callback`);
+  }
+
   await azQuiet(`ad app update --id ${ctx.entraAppId} --web-redirect-uris ${uris.map(u => `"${u}"`).join(' ')}`);
 
   s.succeed(`  Entra redirect URIs updated (${uris.length} URIs)`);

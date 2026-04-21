@@ -11,6 +11,9 @@ export async function confirmDeployment(ctx: DeployContext): Promise<boolean> {
   console.log(`  Subscription: ${chalk.white(ctx.subscriptionName)} ${chalk.dim(`(${ctx.subscriptionId})`)}`);
   console.log(`  Customer:     ${chalk.white(ctx.customerSlug)}`);
   console.log(`  Region:       ${chalk.white(ctx.region)}`);
+  if (ctx.customGatewayDomain) {
+    console.log(`  Gateway host: ${chalk.white(ctx.customGatewayDomain)} ${chalk.dim('(custom — DNS required)')}`);
+  }
   console.log(`  Connectors:   ${chalk.white(ctx.selectedConnectors.map(c => c.name).join(', '))}`);
   log.blank();
   console.log(chalk.dim('  Resources to create:'));

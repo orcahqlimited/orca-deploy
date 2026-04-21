@@ -9,6 +9,7 @@ import { importImages, importCoreProductImages } from './images.js';
 import { createContainerApps } from './containers.js';
 import { deployCoreProduct } from './core-product.js';
 import { deployAksQdrant } from './aks-qdrant.js';
+import { bindCustomGatewayDomain } from './custom-domain.js';
 import { runHealthChecks, printSummary } from './health.js';
 import { provisionLicenses } from './licenses.js';
 import {

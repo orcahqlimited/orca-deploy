@@ -43,6 +43,10 @@ export function governancePortalAppName(_customer: string): string {
   return `orca-governance-portal`;
 }
 
+export function governanceConnectorAppName(_customer: string): string {
+  return `orca-governance-connector`;
+}
+
 export function licenseServiceAppName(_customer: string): string {
   return `orca-license-service`;
 }

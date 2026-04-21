@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   const { subscriptionId, subscriptionName } = await selectSubscription(tenantId);
 
   // 3. Customer & Region
-  const { customerSlug, region, regionShort } = await getCustomerAndRegion();
+  const { customerSlug, region, regionShort, customGatewayDomain } = await getCustomerAndRegion();
 
   // 4. Connector Selection
   const selectedConnectors = await selectConnectors();
@@ -43,6 +43,7 @@ async function main(): Promise<void> {
     credentials: {},
     connectorFqdns: {},
     licenseTokens: {},
+    customGatewayDomain,
   };
 
   // 6. Pre-flight Checks

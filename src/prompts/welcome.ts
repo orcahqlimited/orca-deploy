@@ -1,8 +1,13 @@
-import { input, select } from '@inquirer/prompts';
+import { input, select, confirm } from '@inquirer/prompts';
 import { REGIONS } from '../types.js';
 import * as log from '../utils/log.js';
 
-export async function getCustomerAndRegion(): Promise<{ customerSlug: string; region: string; regionShort: string }> {
+export async function getCustomerAndRegion(): Promise<{
+  customerSlug: string;
+  region: string;
+  regionShort: string;
+  customGatewayDomain?: string;
+}> {
   log.heading('  Customer & Region');
 
   const customerSlug = await input({
@@ -28,7 +33,43 @@ export async function getCustomerAndRegion(): Promise<{ customerSlug: string; re
 
   const regionShort = REGIONS[region] || region.slice(0, 3);
 
-  log.success(`Customer: ${customerSlug}, Region: ${region} (${regionShort})`);
+  // Optional custom domain — customer-owned hostname for the gateway.
+  // Skip path: deploy binds the Azure-assigned *.azurecontainerapps.io FQDN
+  // only, and GATEWAY_URL is set from that.
+  const wantsCustomDomain = await confirm({
+    message: 'Bind a custom domain to the gateway? (e.g. gateway.example.com)',
+    default: false,
+  });
+  let customGatewayDomain: string | undefined;
+  if (wantsCustomDomain) {
+    customGatewayDomain = await input({
+      message: 'Gateway hostname (no scheme, no trailing slash):',
+      validate: (val: string) => {
+        if (!/^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/.test(val)) {
+          return 'Must be a valid lowercase hostname (letters, digits, dots, hyphens)';
+        }
+        if (!val.includes('.')) return 'Must be a fully qualified domain (e.g. gateway.example.com)';
+        if (val.endsWith('.azurecontainerapps.io')) {
+          return 'Do not pass the Azure-assigned FQDN — that binds automatically';
+        }
+        return true;
+      },
+    });
+    log.dim(
+      `  You must add a CNAME for ${customGatewayDomain} pointing to the gateway's`
+    );
+    log.dim(
+      `  Azure FQDN before the managed certificate can be issued. The CLI will`
+    );
+    log.dim(
+      `  print the target CNAME after the Container Apps Environment is created.`
+    );
+  }
 
-  return { customerSlug, region, regionShort };
+  log.success(
+    `Customer: ${customerSlug}, Region: ${region} (${regionShort})` +
+      (customGatewayDomain ? `, Domain: ${customGatewayDomain}` : '')
+  );
+
+  return { customerSlug, region, regionShort, customGatewayDomain };
 }

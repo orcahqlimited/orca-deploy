@@ -61,7 +61,16 @@ export interface DeployContext {
   copilotEntraClientSecret?: string;
   governancePortalFqdn?: string;
   governancePortalUrl?: string;
+  governanceConnectorFqdn?: string;
+  governanceConnectorUrl?: string;
   licenseServiceFqdn?: string;
+  // Customer custom domain for the gateway (e.g. gateway.agilecadence.co.uk).
+  // Optional; if set, bound to the gateway Container App after deploy and used
+  // to populate GATEWAY_URL everywhere. If absent, gateway FQDN is used as-is.
+  customGatewayDomain?: string;
+  // Whether the custom-domain managed certificate has been issued and the
+  // hostname binding is validated. Drives whether GATEWAY_URL switches over.
+  customGatewayDomainBound?: boolean;
   // Gateway-specific secrets
   heartbeatSecret?: string;
   graphWebhookClientState?: string;
