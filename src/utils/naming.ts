@@ -26,6 +26,10 @@ export function caEnvironmentName(customer: string, region: string): string {
   return `orca-${customer}-cae-${regionShort(region)}`;
 }
 
+export function vnetName(customer: string, region: string): string {
+  return `vnet-orca-${customer}-${regionShort(region)}`;
+}
+
 export function connectorAppName(connectorSlug: string): string {
   return `orca-${connectorSlug}-connector`;
 }

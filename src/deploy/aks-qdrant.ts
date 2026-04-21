@@ -295,9 +295,20 @@ spec:
 /**
  * Convenience wrapper — full AKS + Qdrant provisioning sequence.
  * Callers (e.g. deploy/index.ts) can invoke this as one step.
+ *
+ * Order matters: the customer VNet must already exist (createVnet) so that
+ * right after the AKS managed VNet is created we can peer the two. Qdrant's
+ * Internal LB VIP is only reachable from the CAE via that peering.
  */
 export async function deployAksQdrant(ctx: DeployContext): Promise<void> {
   await createAksCluster(ctx);
+
+  // Peer the AKS managed VNet with the customer VNet (created earlier).
+  // Must run before Qdrant so the Internal LB is reachable from the CAE
+  // the moment the VIP is assigned, avoiding a post-deploy dead period.
+  const { peerAksVnet } = await import('./vnet.js');
+  await peerAksVnet(ctx);
+
   await installQdrant(ctx);
   await deployQdrantCronJobs(ctx);
 

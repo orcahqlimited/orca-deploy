@@ -4,6 +4,7 @@ import { createAcr } from './acr.js';
 import { createKeyVault } from './keyvault.js';
 import { createManagedIdentity } from './identity.js';
 import { createEntraApp, updateEntraRedirectUris } from './entra.js';
+import { createVnet } from './vnet.js';
 import { createEnvironment } from './environment.js';
 import { importImages, importCoreProductImages } from './images.js';
 import { createContainerApps } from './containers.js';
@@ -53,7 +54,12 @@ export async function deploy(ctx: DeployContext): Promise<void> {
     //          PowerShell-dependent — prints manual fallback if pwsh is missing)
     await grantApplicationAccessPolicy(ctx);
 
-    // Step 6: Container Apps Environment
+    // Step 5f: Customer VNet + cae-infra subnet. Must exist before CAE and
+    //          AKS so the CAE is VNet-integrated and the AKS managed VNet can
+    //          be peered to it (enables gateway → Qdrant internal LB).
+    await createVnet(ctx);
+
+    // Step 6: Container Apps Environment (VNet-integrated onto cae-infra)
     await createEnvironment(ctx);
 
     // Step 6b: AKS cluster + Qdrant — provides QDRANT_URL for the gateway.

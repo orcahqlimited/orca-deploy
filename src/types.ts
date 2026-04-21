@@ -38,6 +38,11 @@ export interface DeployContext {
   entraClientSecret?: string;
   caEnvironment?: string;
   caDomain?: string;
+  // Customer-owned VNet carrying the cae-infra subnet. Peered to the AKS
+  // managed VNet so the gateway can reach the Qdrant internal LB VIP.
+  vnetName?: string;
+  vnetId?: string;
+  caeSubnetId?: string;
   jwtSigningKey?: string;
   connectorFqdns: Record<string, string>;  // slug → fqdn
   orcaAcrToken?: string;

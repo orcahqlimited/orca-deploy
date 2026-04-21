@@ -5,8 +5,10 @@ import * as log from '../utils/log.js';
 const REQUIRED_PROVIDERS = [
   'Microsoft.App',
   'Microsoft.ContainerRegistry',
+  'Microsoft.ContainerService',
   'Microsoft.KeyVault',
   'Microsoft.ManagedIdentity',
+  'Microsoft.Network',
   'Microsoft.OperationalInsights',
 ];
 
