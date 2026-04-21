@@ -60,11 +60,14 @@ export async function bindCustomGatewayDomain(ctx: DeployContext): Promise<void>
   }
   log.blank();
   log.warn(
-    '  The customer DNS team must create these records before we proceed.'
+    '  The customer DNS admin must create these records before we proceed.'
   );
-  log.dim(
-    '  TTL 300s is fine. Propagation usually takes 2-5 minutes.'
-  );
+  log.dim('  If the domain is managed in Microsoft 365:');
+  log.dim('    admin.microsoft.com  →  Settings  →  Domains  →  <your-domain>');
+  log.dim('    →  DNS records  →  Add record  (type CNAME, then TXT)');
+  log.dim('  If managed by an external DNS provider (Cloudflare, Route 53,');
+  log.dim('  GoDaddy, etc.): add the records there. TTL 300s is fine.');
+  log.dim('  Propagation typically takes 2-5 minutes.');
   log.blank();
 
   const proceed = await confirm({

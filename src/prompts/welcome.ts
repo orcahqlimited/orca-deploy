@@ -56,13 +56,16 @@ export async function getCustomerAndRegion(): Promise<{
       },
     });
     log.dim(
-      `  You must add a CNAME for ${customGatewayDomain} pointing to the gateway's`
+      `  After the gateway Container App is created, the CLI will print the`
     );
     log.dim(
-      `  Azure FQDN before the managed certificate can be issued. The CLI will`
+      `  exact CNAME + asuid TXT records to add. For Microsoft 365-managed`
     );
     log.dim(
-      `  print the target CNAME after the Container Apps Environment is created.`
+      `  domains, add them via admin.microsoft.com → Settings → Domains →`
+    );
+    log.dim(
+      `  <domain> → DNS records. Otherwise add them at your DNS provider.`
     );
   }
 
