@@ -84,13 +84,16 @@ export const IMAGE_TAGS: Record<string, string> = {
   'orca-mcp-gateway': 'rc-1.0.0',
   'orca-copilot': 'rc-1.0.0',
   'orca-governance-portal': 'rc-1.0.0',
+  'orca-governance-connector': 'rc-1.0.0',
   'orca-license-service': 'rc-1.0.0',
 };
 
-// Core product images — always deployed (gateway, copilot, governance portal, licence service)
+// Core product images — always deployed (gateway, copilot, governance portal,
+// governance connector, licence service)
 export const CORE_PRODUCT_IMAGES = [
   'orca-mcp-gateway',
   'orca-copilot',
   'orca-governance-portal',
+  'orca-governance-connector',
   'orca-license-service',
 ];
