@@ -12,6 +12,7 @@ import { confirmDeployment } from './prompts/confirm.js';
 import { runPreflight } from './preflight/index.js';
 import { deploy } from './deploy/index.js';
 import { verifyLicence, printLicenceSummary } from './licence/verify.js';
+import { sendInstallEvent, newInstallId } from './licence/phone-home.js';
 import * as log from './utils/log.js';
 
 async function main(): Promise<void> {
@@ -65,7 +66,12 @@ async function main(): Promise<void> {
     // by provisionLicenses, replacing the previous in-flight-issue flow.
     licenceToken: licence.token,
     licenceClaims: licence.claims,
+    // Stable id for phone-home event joining
+    _installId: newInstallId(),
   };
+
+  // Phone home: install started. Non-blocking, fire-and-forget.
+  await sendInstallEvent(ctx, 'install.start');
 
   // 6. Pre-flight Checks
   const preflightPassed = await runPreflight(ctx);

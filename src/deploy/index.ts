@@ -19,12 +19,15 @@ import {
   createGraphSubscription,
   grantApplicationAccessPolicy,
 } from './rbac-graph.js';
+import { sendInstallEvent } from '../licence/phone-home.js';
 import * as log from '../utils/log.js';
 import chalk from 'chalk';
 
 export async function deploy(ctx: DeployContext): Promise<void> {
   log.heading(`  Deploying to ${ctx.customerSlug} (${ctx.region})`);
   log.blank();
+
+  const deployStart = Date.now();
 
   try {
     // Step 1: Resource Group
@@ -95,6 +98,11 @@ export async function deploy(ctx: DeployContext): Promise<void> {
       log.dim(`Check manually: curl https://{connector-fqdn}/health`);
       printSummary(ctx);
     }
+
+    // Phone home: install completed. Non-blocking.
+    await sendInstallEvent(ctx, 'install.complete', {
+      duration_ms: Date.now() - deployStart,
+    });
   } catch (err: any) {
     log.blank();
     log.fail(chalk.red.bold(`Deployment failed: ${err.message}`));
@@ -102,6 +110,12 @@ export async function deploy(ctx: DeployContext): Promise<void> {
     if (ctx.resourceGroup) {
       log.dim(`To clean up: az group delete --name ${ctx.resourceGroup} --yes --no-wait`);
     }
+    // Phone home: install failed. Best-effort — swallows its own errors.
+    await sendInstallEvent(ctx, 'install.fail', {
+      duration_ms: Date.now() - deployStart,
+      // Trim error message to avoid shipping stack traces.
+      error: String(err?.message || err).slice(0, 500),
+    });
     process.exit(1);
   }
 }

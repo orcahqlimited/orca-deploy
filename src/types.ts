@@ -81,6 +81,9 @@ export interface DeployContext {
   graphWebhookClientState?: string;
   // Licence — verified at startup, written to KV as orca-license-master
   // during provisionLicenses. No offline-grace fallback.
+  // Stable UUID for the install run, used to join phone-home events
+  // (install.start / install.complete / install.fail) server-side.
+  _installId?: string;
   licenceToken?: string;
   licenceClaims?: {
     iss: string;
