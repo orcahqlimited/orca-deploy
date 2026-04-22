@@ -119,21 +119,37 @@ export async function installQdrant(ctx: DeployContext): Promise<void> {
 
   // 2c. Install or upgrade Qdrant.
   //
-  // service.annotations needs the dotted Azure LB annotation encoded for
-  // Helm's --set parser. We use --set-string with back-slash-escaped dots,
-  // and quote the whole expression for the shell.
-  const internalLbAnnotation =
-    `service.annotations."service\\.beta\\.kubernetes\\.io/azure-load-balancer-internal"=true`;
+  // The Azure internal-LB annotation key has dots in it
+  // (`service.beta.kubernetes.io/azure-load-balancer-internal`), which
+  // collide with Helm's `--set` dot-path syntax. The fix is a values file,
+  // not more `--set` escaping (CL-ORCAHQ-0124: on earlier installer
+  // versions we tried wrapping the key in quotes inside `--set-string`;
+  // helm passed the quotes through literally and Kubernetes rejected the
+  // annotation for violating RFC 1123).
+  //
+  // Writing the annotation into a short values file and passing it via
+  // `-f` sidesteps every parser pitfall.
+  const valuesPath = '/tmp/qdrant-values.yaml';
+  const valuesYaml = [
+    `persistence:`,
+    `  storageClassName: ${QDRANT_STORAGE_CLASS}`,
+    `  size: ${QDRANT_PVC_SIZE}`,
+    `service:`,
+    `  type: LoadBalancer`,
+    `  annotations:`,
+    `    service.beta.kubernetes.io/azure-load-balancer-internal: "true"`,
+    ``,
+  ].join('\n');
+  await shOrThrow(
+    `cat > ${valuesPath} <<'YAML'\n${valuesYaml}YAML`,
+  );
 
   const helmArgs = [
     `helm upgrade --install qdrant qdrant/qdrant`,
     `--version ${QDRANT_HELM_CHART_VERSION}`,
     `--namespace ${QDRANT_NAMESPACE}`,
     `--create-namespace`,
-    `--set persistence.storageClassName=${QDRANT_STORAGE_CLASS}`,
-    `--set persistence.size=${QDRANT_PVC_SIZE}`,
-    `--set service.type=LoadBalancer`,
-    `--set-string '${internalLbAnnotation}'`,
+    `-f ${valuesPath}`,
     `--wait --timeout 10m`,
   ].join(' ');
 
