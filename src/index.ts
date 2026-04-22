@@ -7,7 +7,7 @@ import { showComingSoon } from './coming-soon.js';
 import { selectTenant, selectSubscription } from './prompts/azure-context.js';
 import { getCustomerAndRegion } from './prompts/welcome.js';
 import { selectConnectors } from './prompts/connectors.js';
-import { collectCredentials } from './prompts/credentials.js';
+import { collectCredentials, imagesAlreadyImported } from './prompts/credentials.js';
 import { confirmDeployment } from './prompts/confirm.js';
 import { runPreflight } from './preflight/index.js';
 import { deploy } from './deploy/index.js';
@@ -80,16 +80,26 @@ async function main(): Promise<void> {
   }
 
   // 7. Credential Prompts
-  ctx.credentials = await collectCredentials(selectedConnectors);
+  ctx.credentials = await collectCredentials(selectedConnectors, customerSlug, region);
 
-  // 8. ORCA HQ ACR Token (for importing images)
-  log.heading('  ORCA HQ Image Library');
-  log.dim('An ORCA HQ deployment token is required to import connector images.');
-  log.dim('This token is provided by ORCA HQ and has read-only access to RC images.');
-  ctx.orcaAcrToken = await password({
-    message: 'ORCA HQ ACR deployment token:',
-    mask: '*',
-  });
+  // 8. ORCA HQ ACR Token (for importing images) — skipped on resume if the
+  //    customer's ACR already has the gateway image, meaning a prior install
+  //    got past the import phase and we have nothing to import.
+  const imagesPresent = await imagesAlreadyImported(customerSlug, region);
+  if (imagesPresent) {
+    log.heading('  ORCA HQ Image Library');
+    log.success('Images already imported into your ACR on a prior run — skipping token prompt.');
+    log.dim('(Re-run with ORCA_FORCE_REIMPORT=1 if you need to refresh to a newer tag.)');
+    ctx.orcaAcrToken = '';
+  } else {
+    log.heading('  ORCA HQ Image Library');
+    log.dim('An ORCA HQ deployment token is required to import connector images.');
+    log.dim('This token is provided by ORCA HQ and has read-only access to RC images.');
+    ctx.orcaAcrToken = await password({
+      message: 'ORCA HQ ACR deployment token:',
+      mask: '*',
+    });
+  }
 
   // 9. Confirm
   const confirmed = await confirmDeployment(ctx);
