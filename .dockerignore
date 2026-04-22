@@ -1,0 +1,9 @@
+node_modules
+.git
+.github
+*.tgz
+*.md
+scripts/dry-run.mjs
+src
+tsconfig.json
+bootstrap.sh

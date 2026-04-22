@@ -79,6 +79,21 @@ export interface DeployContext {
   // Gateway-specific secrets
   heartbeatSecret?: string;
   graphWebhookClientState?: string;
+  // Licence — verified at startup, written to KV as orca-license-master
+  // during provisionLicenses. No offline-grace fallback.
+  licenceToken?: string;
+  licenceClaims?: {
+    iss: string;
+    sub: string;
+    tid: string;
+    jti: string;
+    type: string;
+    tier: string;
+    maxConnectors: number;
+    connectors: string[];
+    iat: number;
+    exp: number;
+  };
 }
 
 export interface PreflightResult {

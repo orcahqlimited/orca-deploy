@@ -45,45 +45,61 @@ export async function provisionLicenses(ctx: DeployContext): Promise<void> {
 
   ctx.licenseServiceEndpoint = LICENSE_SERVICE_URL;
 
-  try {
-    // Request master + child licences from the licence service
-    const connectorSlugs = ctx.selectedConnectors.map(c => c.slug);
-    const adminKey = ctx.jwtSigningKey || '';
+  if (!ctx.licenceToken || !ctx.licenceClaims) {
+    // Should never happen — the licence gate in index.ts runs before we get
+    // here and exits with a clear message if ORCA_LICENCE_KEY is missing.
+    // Kept as a defensive guard.
+    s.fail('  No licence token on context — licence gate was skipped');
+    throw new Error('provisionLicenses requires a verified licence on ctx.licenceToken');
+  }
 
+  // The master licence is the one the customer supplied in ORCA_LICENCE_KEY,
+  // already verified against the tenant. Write it straight to Key Vault —
+  // no round-trip to the licence service for the master.
+  await azQuiet(
+    `keyvault secret set --vault-name ${ctx.keyVaultName} --name orca-license-master --value "${ctx.licenceToken}"`,
+  );
+
+  // Child licences (one per connector the customer deploys) are still issued
+  // by the licence service. The service endpoint currently doesn't require
+  // an admin key — the tenant-binding in the master licence is what keeps
+  // things honest. If the service is unreachable, fall back to offline
+  // children keyed to the master's expiry (never longer than the master).
+  try {
+    const connectorSlugs = ctx.selectedConnectors.map(c => c.slug);
     const res = await postJson(`${LICENSE_SERVICE_URL}/api/license/issue`, {
       customerTenantId: ctx.tenantId,
       customerId: ctx.customerSlug,
-      tier: 'lighthouse',
+      tier: ctx.licenceClaims.tier,
       connectors: connectorSlugs,
-      gracePeriodDays: 60,
-    }, adminKey);
+      // Child licences track master expiry — no separate grace period.
+      gracePeriodDays: Math.max(
+        1,
+        Math.floor((ctx.licenceClaims.exp * 1000 - Date.now()) / (24 * 60 * 60 * 1000)),
+      ),
+    }, ctx.jwtSigningKey || '');
 
-    if (res.status >= 200 && res.status < 300 && res.data?.master?.token) {
-      // Store master licence in Key Vault
-      await azQuiet(
-        `keyvault secret set --vault-name ${ctx.keyVaultName} --name orca-license-master --value "${res.data.master.token}"`
-      );
-
-      // Store child licences per connector
-      for (const child of res.data.children || []) {
+    if (res.status >= 200 && res.status < 300 && Array.isArray(res.data?.children)) {
+      for (const child of res.data.children) {
         const slug = child.module;
         ctx.licenseTokens[slug] = child.token;
         await azQuiet(
-          `keyvault secret set --vault-name ${ctx.keyVaultName} --name orca-license-${slug} --value "${child.token}"`
+          `keyvault secret set --vault-name ${ctx.keyVaultName} --name orca-license-${slug} --value "${child.token}"`,
         );
       }
-
-      s.succeed(`  ORCA licences provisioned (master + ${connectorSlugs.length} child)`);
-    } else {
-      // Licence service unavailable or error — generate offline grace tokens
-      s.warn('  Licence service unavailable — generating offline grace tokens');
-      await generateOfflineGraceTokens(ctx);
+      s.succeed(`  ORCA licences provisioned (master from env + ${res.data.children.length} child from service)`);
+      return;
     }
+    // Service returned but with no children — fall through to offline path
+    s.warn('  Licence service returned no child tokens — generating offline children');
   } catch (err: any) {
-    // Licence service unreachable — fall back to offline grace tokens
-    s.warn(`  Licence service unreachable (${err.message}) — generating offline grace tokens`);
-    await generateOfflineGraceTokens(ctx);
+    s.warn(`  Licence service unreachable (${err.message}) — generating offline children`);
   }
+
+  // Offline fallback for child licences only. Master is the customer's real
+  // licence (verified above), child tokens are derived with the same expiry.
+  await generateOfflineGraceTokens(ctx);
+  s.succeed(`  ORCA licences provisioned (master from env + offline children)`);
 }
 
 /**

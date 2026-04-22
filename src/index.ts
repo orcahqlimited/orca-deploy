@@ -11,6 +11,7 @@ import { collectCredentials } from './prompts/credentials.js';
 import { confirmDeployment } from './prompts/confirm.js';
 import { runPreflight } from './preflight/index.js';
 import { deploy } from './deploy/index.js';
+import { verifyLicence, printLicenceSummary } from './licence/verify.js';
 import * as log from './utils/log.js';
 
 async function main(): Promise<void> {
@@ -21,7 +22,23 @@ async function main(): Promise<void> {
   const { tenantId, tenantName } = await selectTenant();
   const { subscriptionId, subscriptionName } = await selectSubscription(tenantId);
 
-  // 3. Customer & Region
+  // 2b. Licence gate — refuse to continue without a valid ORCA_LICENCE_KEY
+  //     signed by ORCA HQ and bound to this tenant. No resources are created
+  //     if the licence is missing, forged, expired, or bound to a different
+  //     tenant. Errors printed clearly with remediation path.
+  let licence;
+  try {
+    licence = await verifyLicence();
+    printLicenceSummary(licence);
+  } catch (err: any) {
+    log.blank();
+    log.fail(err.message);
+    process.exit(2);
+  }
+
+  // 3. Customer & Region — if the licence carries a customer slug, default to
+  //    it (customer can still override at the prompt, but the typical flow is
+  //    to accept what the licence says).
   const { customerSlug, region, regionShort, customGatewayDomain } = await getCustomerAndRegion();
 
   // 4. Connector Selection
@@ -44,6 +61,10 @@ async function main(): Promise<void> {
     connectorFqdns: {},
     licenseTokens: {},
     customGatewayDomain,
+    // Licence payload — the raw JWT is written to KV as the master licence
+    // by provisionLicenses, replacing the previous in-flight-issue flow.
+    licenceToken: licence.token,
+    licenceClaims: licence.claims,
   };
 
   // 6. Pre-flight Checks

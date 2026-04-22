@@ -1,0 +1,80 @@
+name: Build + push orca-installer image to GHCR
+
+# Triggers:
+#   - Every push of a v* tag (the canonical release trigger).
+#   - Manual `workflow_dispatch` for ad-hoc rebuilds.
+#
+# Outputs:
+#   - ghcr.io/orcahqlimited/orca-installer:<tag>    (e.g. v0.2.0)
+#   - ghcr.io/orcahqlimited/orca-installer:latest   (on tag push only)
+#
+# The package visibility on GHCR must be set to public once, via the web UI
+# (Settings → Packages → orca-installer → Package settings → Change visibility).
+# After that, customers can pull anonymously.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install + build installer
+        run: |
+          npm ci
+          npm run build
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract tag name
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "tag=manual-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+            echo "is_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build + push (release)
+        if: steps.tag.outputs.is_release == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/orcahqlimited/orca-installer:${{ steps.tag.outputs.tag }}
+            ghcr.io/orcahqlimited/orca-installer:latest
+
+      - name: Build + push (manual)
+        if: steps.tag.outputs.is_release == 'false'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/orcahqlimited/orca-installer:${{ steps.tag.outputs.tag }}
