@@ -32,14 +32,14 @@ RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm
   && /tmp/get-helm-3.sh \
   && rm -f /tmp/get-helm-3.sh
 
-# Copy installer sources
+# Copy installer sources. The `dist/` tree includes dist/licence/pem because
+# npm run build copies it alongside the compiled TypeScript output (see the
+# build script in package.json). The CI workflow runs `npm run build` before
+# `docker build`, so dist/ is guaranteed to contain the PEM.
 WORKDIR /orca
 COPY package.json package-lock.json ./
 RUN npm install --production --silent
 COPY dist/ ./dist/
-# The PEM is copied into dist/licence/ by the build script, but belt-and-braces
-# for Docker builds that COPY the pre-built dist without running npm run build.
-COPY src/licence/orca-hq-licence.pub.pem ./dist/licence/
 
 # Smoke-test the installer loads (catches missing modules before a customer
 # pulls the image, at build time not runtime).
