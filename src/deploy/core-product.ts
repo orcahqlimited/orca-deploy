@@ -18,8 +18,9 @@ import { bindCustomGatewayDomain } from './custom-domain.js';
 
 // ORCA HQ's support API — tickets route here regardless of customer tenant
 // (see ORCAHQ-CUSTOMER-DEPLOYMENT-001.md §2.2). Not customer-owned.
-const ORCA_HQ_SUPPORT_API_URL =
-  'https://orca-support-api.icyplant-8c8bf272.uksouth.azurecontainerapps.io';
+// Addressed via the orcahq.ai proxy so we can move the backend without
+// breaking customer-side support ticket submission.
+const ORCA_HQ_SUPPORT_API_URL = 'https://support-api.orcahq.ai';
 
 // Foundry endpoint defaults — customer either brings their own (override via env)
 // or uses the shared ORCA HQ endpoints per licence terms.

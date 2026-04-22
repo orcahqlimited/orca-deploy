@@ -21,9 +21,11 @@ import { URL } from 'node:url';
 import type { DeployContext } from '../types.js';
 import * as log from '../utils/log.js';
 
+// Stable ORCA HQ hostname fronted by orca-hq-proxy (Cloudflare Worker).
+// Lets us move the licence-service backend without breaking every shipped
+// installer. Override with LICENSE_SERVICE_URL for local/dev testing.
 const LICENSE_SERVICE_URL =
-  process.env.LICENSE_SERVICE_URL
-  || 'https://orca-license-service.icyplant-8c8bf272.uksouth.azurecontainerapps.io';
+  process.env.LICENSE_SERVICE_URL || 'https://license.orcahq.ai';
 
 const INSTALLER_VERSION = process.env.INSTALLER_VERSION || 'dev';
 

@@ -3,7 +3,12 @@ import type { DeployContext } from '../types.js';
 import { azQuiet } from '../utils/az.js';
 import * as log from '../utils/log.js';
 
-const LICENSE_SERVICE_URL = 'https://orca-license-service.icyplant-8c8bf272.uksouth.azurecontainerapps.io';
+// Stable ORCA HQ hostname fronted by orca-hq-proxy (Cloudflare Worker).
+// Originally a *.azurecontainerapps.io FQDN; abstracting it via orcahq.ai
+// means backend moves are a DNS/proxy update, not a customer re-roll.
+// Override in tests with env LICENSE_SERVICE_URL.
+const LICENSE_SERVICE_URL =
+  process.env.LICENSE_SERVICE_URL || 'https://license.orcahq.ai';
 
 function postJson(url: string, body: object, adminKey: string): Promise<{ status: number; data: any }> {
   return new Promise((resolve, reject) => {
