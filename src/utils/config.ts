@@ -78,11 +78,17 @@ export const ENTRA_APP_ROLES = [
 // Connectors bumped to rc-1.0.2 on 2026-04-21 to pick up the 7-day access +
 // 90-day refresh token standard (ORCAHQ-MCP-AUTH-STANDARD-001). The older
 // rc-1.0.1 tags were built 2026-04-01 and predate the token-lifetime change.
+//
+// orca-ado-connector bumped to rc-1.0.3 on 2026-04-22 to fix
+// WRN-WIQL-INPUT-SANITIZATION: user-supplied include_states in
+// ado_blocked_work_items was not escaping single quotes before WIQL splice.
+// Finding surfaced by orca-reviewer (Qwen3-Coder overnight pass) and caught
+// pre-ship of first customer (AgileCadence).
 export const IMAGE_TAGS: Record<string, string> = {
   'orca-freeagent-connector': 'rc-1.0.2',
   'orca-freshworks-connector': 'rc-1.0.2',
   'orca-isms-connector': 'rc-1.0.2',
-  'orca-ado-connector': 'rc-1.0.2',
+  'orca-ado-connector': 'rc-1.0.3',
   'orca-azure-security-connector': 'rc-1.0.0',
   // Core product images — pinned tags, updated on each CLI release
   'orca-mcp-gateway': 'rc-1.0.0',
