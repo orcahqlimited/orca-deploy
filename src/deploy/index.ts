@@ -16,6 +16,7 @@ import { deployCoreProduct } from './core-product.js';
 import { deployAksQdrant } from './aks-qdrant.js';
 import { bindCustomGatewayDomain } from './custom-domain.js';
 import { runHealthChecks, printSummary } from './health.js';
+import { runEstateReport } from './estate-report.js';
 import { provisionLicenses } from './licenses.js';
 import { configureFoundry } from './foundry-proxy.js';
 import {
@@ -138,9 +139,24 @@ export async function deploy(ctx: DeployContext): Promise<void> {
       printSummary(ctx);
     }
 
-    // Phone home: install completed. Non-blocking.
-    await sendInstallEvent(ctx, 'install.complete', {
+    // Step 10: Estate report (INTENT-104 §104-U). Runs the read-only
+    //          scripts/orca-estate-report.ps1 to prove what actually exists
+    //          in the customer tenant. install.complete fires only if the
+    //          report exits 0 — so HQ telemetry reflects truly-complete
+    //          deploys, not deploys that merely reached their final line.
+    const estate = await runEstateReport(ctx);
+
+    // Phone home: install completed. Non-blocking. Only fire when the
+    // estate report either ran clean (exit 0) or couldn't run at all
+    // (pwsh missing). A report that ran and returned non-zero indicates a
+    // partial install — fire install.partial instead so HQ can surface it
+    // to the customer success team.
+    const estateOk = !estate.ran || estate.exitCode === 0;
+    await sendInstallEvent(ctx, estateOk ? 'install.complete' : 'install.partial', {
       duration_ms: Date.now() - deployStart,
+      estate_ran: estate.ran,
+      estate_exit_code: estate.exitCode,
+      estate_report_path: estate.reportPath,
     });
   } catch (err: any) {
     log.blank();

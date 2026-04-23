@@ -5,7 +5,8 @@
 //
 // Events sent:
 //   install.start     — after licence verification, before any Azure calls
-//   install.complete  — after health checks pass
+//   install.complete  — after health checks pass AND estate report exit 0
+//   install.partial   — health checks passed but estate report exit != 0
 //   install.fail      — from the top-level catch in deploy/index.ts
 //   install.upgrade   — (future) when re-running against an existing deploy
 //
@@ -30,7 +31,7 @@ const LICENSE_SERVICE_URL =
 const INSTALLER_VERSION = process.env.INSTALLER_VERSION || 'dev';
 
 export interface InstallEvent {
-  event: 'install.start' | 'install.complete' | 'install.fail' | 'install.upgrade';
+  event: 'install.start' | 'install.complete' | 'install.partial' | 'install.fail' | 'install.upgrade';
   install_id: string;
   customer_slug: string;
   tenant_id: string;
@@ -41,6 +42,11 @@ export interface InstallEvent {
   error?: string;
   host_hash?: string;
   installer_version?: string;
+  // Estate-report outcomes (INTENT-104 §104-U). Populated on install.complete
+  // and install.partial so HQ can distinguish the two.
+  estate_ran?: boolean;
+  estate_exit_code?: number | null;
+  estate_report_path?: string;
 }
 
 function hostHash(): string {

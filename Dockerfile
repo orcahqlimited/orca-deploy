@@ -51,11 +51,13 @@ RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm
   && rm -f /tmp/get-helm-3.sh
 
 # Installer sources. dist/ contains the compiled JS, type decls, and the
-# licence public key (copied by the npm run build script).
+# licence public key (copied by the npm run build script). scripts/ carries
+# the PowerShell estate-report + SQL DDL that the runtime reads on demand.
 WORKDIR /orca
 COPY package.json package-lock.json ./
 RUN npm install --production --silent
 COPY dist/ ./dist/
+COPY scripts/ ./scripts/
 
 # Smoke-test the installer loads (catches missing modules at build time).
 RUN node -e "import('./dist/licence/verify.js').then(() => console.log('verify ok'))"
