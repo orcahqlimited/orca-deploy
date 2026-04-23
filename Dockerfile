@@ -55,6 +55,26 @@ RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm
   && /tmp/get-helm-3.sh \
   && rm -f /tmp/get-helm-3.sh
 
+# PowerShell 7 + MicrosoftTeams module + sqlcmd (INTENT-ORCAHQ-104 §104-R + §104-A).
+#
+# pwsh is needed for grantApplicationAccessPolicy + the orca-estate-report
+# script — the Teams CsApplicationAccessPolicy + Get-InstalledModule surfaces
+# only exist in PowerShell. sqlcmd is needed so createSqlServer() can apply
+# the PII vault DDL inline during deploy rather than deferring to a manual
+# post-install step.
+#
+# The `packages.microsoft.com/config/debian/12/prod.list` adds the full MS
+# repo covering powershell + mssql-tools18 + other MS packages. The GPG key
+# is the same one already installed for azure-cli above.
+RUN curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list \
+      -o /etc/apt/sources.list.d/microsoft-prod.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends powershell \
+  && ACCEPT_EULA=Y apt-get install -y --no-install-recommends mssql-tools18 unixodbc-dev \
+  && ln -sf /opt/mssql-tools18/bin/sqlcmd /usr/local/bin/sqlcmd \
+  && rm -rf /var/lib/apt/lists/* \
+  && pwsh -NoProfile -Command "Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; Install-Module -Name MicrosoftTeams -Scope AllUsers -Force"
+
 # Installer sources. dist/ contains the compiled JS, type decls, and the
 # licence public key (copied by the npm run build script). scripts/ carries
 # the PowerShell estate-report + SQL DDL that the runtime reads on demand.

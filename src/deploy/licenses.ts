@@ -127,34 +127,47 @@ export async function provisionLicenses(ctx: DeployContext): Promise<void> {
     s.warn(`  Licence service unreachable (${err.message}) — generating offline children`);
   }
 
-  // Offline fallback for child licences only. Master is the customer's real
-  // licence (verified above), child tokens are derived with the same expiry.
-  await generateOfflineGraceTokens(ctx);
-  s.succeed(`  ORCA licences provisioned (master from env + offline children)`);
+  // Offline fallback — CHILD licences only. Master stays as the customer's
+  // real, verified licence (already written to KV above). 104-S / CL-ORCAHQ-0122:
+  // surface a loud, unambiguous warning so the customer knows their connectors
+  // are running on short-lived grace tokens until the service is reachable.
+  await generateOfflineChildTokens(ctx);
+  log.blank();
+  log.warn('  ═══════════════════════════════════════════════════════════════');
+  log.warn('  OFFLINE LICENCE FALLBACK ACTIVE');
+  log.warn('  ───────────────────────────────────────────────────────────────');
+  log.warn('  The licence service at license.orcahq.ai was unreachable or');
+  log.warn('  returned no child tokens. Your connectors are running on 60-day');
+  log.warn('  grace tokens that CARRY NO SIGNATURE and cannot be revoked until');
+  log.warn('  re-run. Re-run orca-deploy once connectivity is restored to pick');
+  log.warn('  up real signed child tokens. Contact your ORCA representative if');
+  log.warn('  the service remains unreachable for more than 24h.');
+  log.warn('  ═══════════════════════════════════════════════════════════════');
+  log.blank();
+  s.succeed(`  ORCA licences provisioned (master from env + offline grace children — SEE WARNING ABOVE)`);
 }
 
 /**
- * When the licence service is not yet deployed, generate simple JWT tokens
- * that encode the 60-day grace period. Connectors decode these without
- * verification (they only check the exp claim for enforcement staging).
+ * Offline CHILD grace tokens only. Never writes to orca-license-master —
+ * the master is always the customer's real, RS256-verified licence written
+ * straight from ctx.licenceToken at the top of provisionLicenses(). Before
+ * §104-S this function regenerated the master too, silently invalidating
+ * the customer's real licence whenever the licence service was briefly
+ * unreachable during install (CL-ORCAHQ-0122).
  */
-async function generateOfflineGraceTokens(ctx: DeployContext): Promise<void> {
-  // Dynamic import to avoid adding jsonwebtoken as a dependency to orca-deploy
-  // We use the jwt signing key to create tokens locally
+async function generateOfflineChildTokens(ctx: DeployContext): Promise<void> {
   const crypto = await import('node:crypto');
 
   const now = Math.floor(Date.now() / 1000);
   const graceDays = 60;
   const exp = now + graceDays * 24 * 60 * 60;
 
-  // Create a simple unsigned token (base64-encoded JSON) — connectors
-  // decode without verification for claim reading
   function createGraceToken(module: string): string {
     const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(JSON.stringify({
       iss: 'orca-deploy-offline',
       sub: ctx.tenantId,
-      aud: module === 'master' ? 'orca-master' : 'orca-connector',
+      aud: 'orca-connector',
       jti: crypto.randomUUID(),
       iat: now,
       exp,
@@ -167,12 +180,6 @@ async function generateOfflineGraceTokens(ctx: DeployContext): Promise<void> {
     return `${header}.${payload}.`;
   }
 
-  // Master token
-  const masterToken = createGraceToken('master');
-  await azQuiet(
-    `keyvault secret set --vault-name ${ctx.keyVaultName} --name orca-license-master --value "${masterToken}"`
-  );
-
   // Child tokens per connector
   for (const connector of ctx.selectedConnectors) {
     const token = createGraceToken(connector.slug);
@@ -182,5 +189,5 @@ async function generateOfflineGraceTokens(ctx: DeployContext): Promise<void> {
     );
   }
 
-  log.success(`  Offline grace tokens generated (${ctx.selectedConnectors.length + 1} tokens, 60-day expiry)`);
+  log.success(`  Offline child grace tokens generated (${ctx.selectedConnectors.length} tokens, 60-day expiry, master untouched)`);
 }

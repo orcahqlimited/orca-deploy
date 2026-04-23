@@ -4,6 +4,7 @@ import { checkAzCli, checkLoggedIn } from './az-cli.js';
 import { checkSubscriptionRoles, checkEntraRole } from './permissions.js';
 import { checkProviders } from './providers.js';
 import { checkNamingConflicts } from './naming.js';
+import { checkLeftoverResources } from './leftover-resources.js';
 import * as log from '../utils/log.js';
 
 export async function runPreflight(ctx: DeployContext): Promise<boolean> {
@@ -49,6 +50,13 @@ export async function runPreflight(ctx: DeployContext): Promise<boolean> {
   checks.push(namingResult);
   printResult(namingResult);
   if (!namingResult.passed) return reportFailures(checks);
+
+  // INTENT-104 §104-T — detect resource groups from prior installs under
+  // different customer slugs and offer explicit leave / teardown / cancel.
+  const leftoverResult = await checkLeftoverResources(ctx.customerSlug);
+  checks.push(leftoverResult);
+  printResult(leftoverResult);
+  if (!leftoverResult.passed) return reportFailures(checks);
 
   log.blank();
   log.success(chalk.green.bold('All pre-flight checks passed'));

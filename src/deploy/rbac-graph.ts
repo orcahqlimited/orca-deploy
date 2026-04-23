@@ -233,6 +233,62 @@ export async function addGraphPermissions(ctx: DeployContext): Promise<void> {
  * Admin consent on the Graph permissions must already be in place, otherwise the
  * client_credentials flow will fail to yield a usable token.
  */
+/**
+ * 104-W — clean up stale Graph subscriptions before creating a new one.
+ *
+ * Graph subscriptions outlive resource-group teardowns. When an installer
+ * re-runs against the same Entra app after a prior gateway FQDN has
+ * changed (or expired / been deleted), stale subscriptions remain on the
+ * Graph side pointing at dead notificationUrls, which then fire lifecycle
+ * notifications into the void and eventually bounce against the 1000-per-
+ * app quota (CL-ORCAHQ-0128). This sweep deletes any subscription owned
+ * by this app that is either:
+ *   - Expired (expirationDateTime in the past), or
+ *   - Pointing at a different gateway URL than this install's gatewayUrl.
+ *
+ * Runs best-effort — any failure logs a warning and lets the caller
+ * continue with createGraphSubscription.
+ */
+async function cleanupStaleGraphSubscriptions(
+  token: string,
+  currentGatewayUrl: string,
+): Promise<number> {
+  let removed = 0;
+  try {
+    const listRes = await httpsRequest(
+      'graph.microsoft.com',
+      '/v1.0/subscriptions',
+      'GET',
+      { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    );
+    if (listRes.statusCode < 200 || listRes.statusCode >= 300) return 0;
+    const parsed = JSON.parse(listRes.body);
+    const list: any[] = Array.isArray(parsed.value) ? parsed.value : [];
+    const normalisedCurrent = currentGatewayUrl.replace(/\/+$/, '');
+    const now = Date.now();
+
+    for (const sub of list) {
+      if (sub.resource !== 'communications/onlineMeetings/getAllTranscripts') continue;
+      const exp = sub.expirationDateTime ? Date.parse(sub.expirationDateTime) : NaN;
+      const isExpired = Number.isFinite(exp) && exp < now;
+      const url = (sub.notificationUrl || '').replace(/\/+$/, '');
+      const urlMismatch = !url.startsWith(normalisedCurrent);
+      if (!isExpired && !urlMismatch) continue;
+
+      const delRes = await httpsRequest(
+        'graph.microsoft.com',
+        `/v1.0/subscriptions/${encodeURIComponent(sub.id)}`,
+        'DELETE',
+        { Authorization: `Bearer ${token}` },
+      );
+      if (delRes.statusCode >= 200 && delRes.statusCode < 300) {
+        removed += 1;
+      }
+    }
+  } catch { /* swallow — cleanup is best-effort */ }
+  return removed;
+}
+
 export async function createGraphSubscription(ctx: DeployContext): Promise<void> {
   const s = log.spinner('Graph subscription: onlineMeetings/getAllTranscripts');
 
@@ -277,6 +333,13 @@ export async function createGraphSubscription(ctx: DeployContext): Promise<void>
     log.dim(`    ${err.message}`);
     log.dim('    The subscription will be re-created automatically by the gateway\'s renewal loop once consent is granted.');
     return;
+  }
+
+  // 104-W — drop stale/expired subscriptions before creating a new one.
+  // Best-effort; never blocks the create path.
+  const removed = await cleanupStaleGraphSubscriptions(token, ctx.gatewayUrl);
+  if (removed > 0) {
+    log.dim(`  Graph stale-sub cleanup: ${removed} removed`);
   }
 
   const notificationUrl = `${ctx.gatewayUrl.replace(/\/+$/, '')}/webhooks/graph/meeting-completed`;
