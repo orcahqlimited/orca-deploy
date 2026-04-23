@@ -63,11 +63,16 @@ RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm
 # the PII vault DDL inline during deploy rather than deferring to a manual
 # post-install step.
 #
-# The `packages.microsoft.com/config/debian/12/prod.list` adds the full MS
-# repo covering powershell + mssql-tools18 + other MS packages. The GPG key
-# is the same one already installed for azure-cli above.
-RUN curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list \
-      -o /etc/apt/sources.list.d/microsoft-prod.list \
+# We install the `packages-microsoft-prod` package rather than just dropping
+# the .list file, because the .list from packages.microsoft.com is signed
+# by a different GPG key than the azure-cli one (Microsoft reuses
+# ARCHIVE-KEYING-KEY for the prod repo, not the azure-cli key). Installing
+# the .deb handles the key + list in one shot and is the path Microsoft's
+# docs recommend on Debian 12.
+RUN curl -fsSL https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
+      -o /tmp/packages-microsoft-prod.deb \
+  && dpkg -i /tmp/packages-microsoft-prod.deb \
+  && rm -f /tmp/packages-microsoft-prod.deb \
   && apt-get update \
   && apt-get install -y --no-install-recommends powershell \
   && ACCEPT_EULA=Y apt-get install -y --no-install-recommends mssql-tools18 unixodbc-dev \
