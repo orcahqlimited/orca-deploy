@@ -435,3 +435,70 @@ function printAccessPolicyManualCommands(tenantId: string, appId: string, founde
   log.dim(`        -PolicyName "ORCAMeetingCapture"`);
   log.blank();
 }
+
+// =============================================================================
+// 5. Assign deployer to ORCA.Founder on the Entra app SP (INTENT-104 §104-G)
+// =============================================================================
+
+// The ORCA.Founder role ID — matches ENTRA_APP_ROLES in src/utils/config.ts.
+// Kept in sync manually; the value is a stable UUID, not customer-specific.
+const ORCA_FOUNDER_ROLE_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
+/**
+ * Assign the signed-in deployer to ORCA.Founder on the Entra app's service
+ * principal. Without this assignment every authenticated request from the
+ * Founder arrives with an empty `roles` claim and the gateway returns 403 —
+ * exactly the 11-hour surprise from the AgileCadence install (CL-ORCAHQ-0106).
+ *
+ * Idempotent: if the assignment already exists Graph returns 400 with error
+ * code "Request_BadRequest" + message containing "already exists"; we catch
+ * that and treat it as success.
+ */
+export async function assignDeployerFounderRole(ctx: DeployContext): Promise<void> {
+  const s = log.spinner('Assigning ORCA.Founder role to deployer');
+
+  if (!ctx.entraAppId) {
+    s.warn('  Founder role assignment: entraAppId missing — skipped');
+    return;
+  }
+
+  try {
+    // Resolve the ORCA MCP Gateway service principal id (not the appId — the
+    // /appRoleAssignedTo endpoint wants the SP object id).
+    const spId = await azTsv(
+      `ad sp show --id ${ctx.entraAppId} --query id`,
+    );
+    const deployerOid = ctx.founderOid
+      ?? (ctx.founderOid = await azTsv('ad signed-in-user show --query id'));
+
+    const body = JSON.stringify({
+      principalId: deployerOid,
+      resourceId: spId,
+      appRoleId: ORCA_FOUNDER_ROLE_ID,
+    }).replace(/"/g, '\\"');
+
+    const result = await az(
+      `rest --method POST --url "https://graph.microsoft.com/v1.0/servicePrincipals/${spId}/appRoleAssignedTo" --headers "Content-Type=application/json" --body "${body}"`,
+    );
+
+    if (result.exitCode === 0) {
+      s.succeed('  ORCA.Founder role assigned to deployer');
+      return;
+    }
+
+    // Already-assigned detection — Graph returns 400 with "already exists"
+    // or a duplicate-permissions message. Both are success from our POV.
+    const err = (result.stderr || '').toLowerCase();
+    if (err.includes('already exists') || err.includes('permission being assigned')) {
+      s.succeed('  ORCA.Founder role already assigned to deployer');
+      return;
+    }
+
+    s.warn('  ORCA.Founder role assignment failed — manual step required');
+    log.dim(`    ${(result.stderr || '').split('\n')[0]}`);
+    log.dim(`    az rest --method POST --url "https://graph.microsoft.com/v1.0/servicePrincipals/${spId}/appRoleAssignedTo" \\`);
+    log.dim(`      --body '${JSON.stringify({ principalId: deployerOid, resourceId: spId, appRoleId: ORCA_FOUNDER_ROLE_ID })}'`);
+  } catch (err: any) {
+    s.warn(`  ORCA.Founder role assignment error: ${err.message}`);
+  }
+}

@@ -22,6 +22,7 @@ import {
   addGraphPermissions,
   createGraphSubscription,
   grantApplicationAccessPolicy,
+  assignDeployerFounderRole,
 } from './rbac-graph.js';
 import { sendInstallEvent } from '../licence/phone-home.js';
 import * as log from '../utils/log.js';
@@ -68,6 +69,13 @@ export async function deploy(ctx: DeployContext): Promise<void> {
     // Step 5a: Extend the ORCA Entra app with Graph permissions for meeting capture
     //          (idempotent; admin consent may require Global Admin — warns + continues)
     await addGraphPermissions(ctx);
+
+    // Step 5a2: Assign the signed-in deployer to ORCA.Founder on the Entra
+    //           app SP (INTENT-104 §104-G — fixes CL-ORCAHQ-0106). Without
+    //           this the Founder's first gateway call returns 403 because the
+    //           JWT `roles` claim is empty. Idempotent — already-assigned is
+    //           detected + treated as success.
+    await assignDeployerFounderRole(ctx);
 
     // Step 5b: Provision ORCA licences (after Key Vault, before containers)
     await provisionLicenses(ctx);
