@@ -66,12 +66,27 @@ export async function createEntraApp(ctx: DeployContext): Promise<void> {
   fs.writeFileSync(rolesFile, JSON.stringify(appRoles));
 
   try {
-    // Create app registration — initially with just claude.ai callback
+    // Create app registration — Claude.ai callback goes under spa.redirectUris,
+    // NOT web.redirectUris (CL-ORCAHQ-0133). Claude.ai runs as a browser-based
+    // SPA and the Entra token exchange expects the callback registered as an
+    // SPA redirect URI (which issues tokens without a client secret via PKCE).
+    // Registering it under web.redirectUris causes the OAuth flow to fail with
+    // AADSTS9002325 "cross-origin token redemption is permitted only for the
+    // 'Single-Page Application' client type". We create the app without any
+    // redirect URI first, then PATCH the SPA redirect URI via Graph — `az ad
+    // app create` exposes --web-redirect-uris and --public-client-redirect-uris
+    // but has no flag for the SPA bucket.
     const app = await azJson(
-      `ad app create --display-name "ORCA Intelligence Connectors" --sign-in-audience AzureADMyOrg --app-roles @${rolesFile} --web-redirect-uris "https://claude.ai/api/mcp/auth_callback" --query "{appId:appId, id:id}"`
+      `ad app create --display-name "ORCA Intelligence Connectors" --sign-in-audience AzureADMyOrg --app-roles @${rolesFile} --query "{appId:appId, id:id}"`
     );
 
     ctx.entraAppId = app.appId;
+
+    // Set spa.redirectUris via Graph PATCH (104-H). Use printf-style escaping
+    // for the shell — this body is small and static.
+    await azQuiet(
+      `rest --method PATCH --url "https://graph.microsoft.com/v1.0/applications/${app.id}" --headers "Content-Type=application/json" --body '{"spa":{"redirectUris":["https://claude.ai/api/mcp/auth_callback"]}}'`,
+    );
 
     // Create service principal
     await azQuiet(`ad sp create --id ${app.appId}`);
@@ -100,22 +115,47 @@ export async function createEntraApp(ctx: DeployContext): Promise<void> {
 export async function updateEntraRedirectUris(ctx: DeployContext): Promise<void> {
   const s = log.spinner('Updating Entra redirect URIs');
 
-  const uris = ['https://claude.ai/api/mcp/auth_callback'];
-  for (const [slug, fqdn] of Object.entries(ctx.connectorFqdns)) {
-    uris.push(`https://${fqdn}/oauth/callback`);
+  // Split redirect URIs by OAuth client type (CL-ORCAHQ-0133):
+  //   spa.redirectUris — browser-SPA flows with PKCE (Claude.ai connector)
+  //   web.redirectUris — confidential-client flows with a client secret
+  //                      (connector OAuth callbacks, gateway MCP callback)
+  //
+  // Registering Claude.ai's callback on web.redirectUris fails with
+  // AADSTS9002325. Registering the connector/gateway callbacks on SPA
+  // breaks the confidential-client exchange. Treat them separately.
+  const spaUris: string[] = ['https://claude.ai/api/mcp/auth_callback'];
+  const webUris: string[] = [];
+
+  for (const [_slug, fqdn] of Object.entries(ctx.connectorFqdns)) {
+    webUris.push(`https://${fqdn}/oauth/callback`);
   }
 
   // Gateway OAuth callbacks — both Azure-assigned FQDN and, if bound, the
   // customer's custom domain. Both must be registered so either hostname
   // can complete OAuth flows.
   if (ctx.gatewayFqdn) {
-    uris.push(`https://${ctx.gatewayFqdn}/api/mcp/auth_callback`);
+    webUris.push(`https://${ctx.gatewayFqdn}/api/mcp/auth_callback`);
   }
   if (ctx.customGatewayDomainBound && ctx.customGatewayDomain) {
-    uris.push(`https://${ctx.customGatewayDomain}/api/mcp/auth_callback`);
+    webUris.push(`https://${ctx.customGatewayDomain}/api/mcp/auth_callback`);
   }
 
-  await azQuiet(`ad app update --id ${ctx.entraAppId} --web-redirect-uris ${uris.map(u => `"${u}"`).join(' ')}`);
+  // Resolve the application object id (required by the Graph PATCH url)
+  // from the appId we already have in ctx.
+  const objectId = await azTsv(
+    `ad app show --id ${ctx.entraAppId} --query id`,
+  );
 
-  s.succeed(`  Entra redirect URIs updated (${uris.length} URIs)`);
+  // Single Graph PATCH sets both buckets atomically.
+  const body = JSON.stringify({
+    spa: { redirectUris: spaUris },
+    web: { redirectUris: webUris },
+  }).replace(/"/g, '\\"');
+  await azQuiet(
+    `rest --method PATCH --url "https://graph.microsoft.com/v1.0/applications/${objectId}" --headers "Content-Type=application/json" --body "${body}"`,
+  );
+
+  s.succeed(
+    `  Entra redirect URIs updated (${spaUris.length} spa + ${webUris.length} web)`,
+  );
 }

@@ -62,3 +62,30 @@ export function copilotEntraAppName(customer: string): string {
 export function copilotBotName(_customer: string): string {
   return `orca-copilot-bot`;
 }
+
+// Azure SQL server — 1-63 chars, lowercase letters/digits/hyphens, starts/ends alnum.
+export function sqlServerName(customer: string, region: string): string {
+  return `orca-${customer}-sql-${regionShort(region)}`;
+}
+
+// PII vault DB name is fixed across all customers — referenced by the
+// orca-mcp-gateway without a customer-slug suffix.
+export const SQL_PII_VAULT_DB = 'orca-pii-vault';
+
+// Azure Storage account — 3-24 chars, lowercase alphanumeric only, globally
+// unique. We use a slug-derived prefix + `blobs` + regionShort to stay
+// within the 24-char ceiling for slugs up to 13 chars.
+export function storageAccountName(customer: string, region: string): string {
+  return `orca${customer}blobs${regionShort(region)}`.toLowerCase().slice(0, 24);
+}
+
+// Container within the storage account holding the customer's encrypted
+// personal-brain blobs (INTENT-017 envelope encryption; DEK-wrapped payload
+// per entry, KEK in Key Vault). One container per customer account.
+export const ENCRYPTED_BRAIN_CONTAINER = 'orca-encrypted-brain';
+
+// KEK secret names in the customer Key Vault. These are secret names, not
+// values — the values are generated during deploy and live only in KV.
+export const ORCA_KEK_KEY_NAME = 'orca-kek';           // RSA-2048 key (wrap/unwrap)
+export const PII_ENCRYPTION_KEY_SECRET = 'pii-encryption-key'; // AES-256 hex
+

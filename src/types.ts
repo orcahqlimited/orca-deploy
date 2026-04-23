@@ -79,6 +79,16 @@ export interface DeployContext {
   // Gateway-specific secrets
   heartbeatSecret?: string;
   graphWebhookClientState?: string;
+  // SQL server + PII vault (INTENT-017 / INTENT-104 §104-A)
+  sqlServerName?: string;
+  sqlServerFqdn?: string;
+  sqlAdminUser?: string;
+  // Storage account hosting encrypted personal-brain blobs (104-E)
+  storageAccountName?: string;
+  storageAccountId?: string;
+  // Foundry proxy customer token — issued by orca-license-service, stored
+  // in customer KV, attached by the gateway to every foundry.orcahq.ai call.
+  foundryCustomerToken?: string;
   // Licence — verified at startup, written to KV as orca-license-master
   // during provisionLicenses. No offline-grace fallback.
   // Stable UUID for the install run, used to join phone-home events
