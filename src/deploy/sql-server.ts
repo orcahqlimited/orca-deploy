@@ -129,10 +129,17 @@ export async function createSqlServer(ctx: DeployContext): Promise<void> {
   }
 
   // Rebuild connection string + store in KV. Using SQL auth here; the
-  // gateway reads this secret at startup.
-  const kvPassword = await azTsv(
-    `keyvault secret show --vault-name ${ctx.keyVaultName} --name sql-admin-password --query value`,
-  );
+  // gateway reads this secret at startup. On the first-run path we already
+  // have the password in scope; on a resume path (server existed, no
+  // adminPassword branch taken) we fall back to reading it from KV.
+  let kvPassword: string;
+  if (adminPassword) {
+    kvPassword = adminPassword;
+  } else {
+    kvPassword = await azTsv(
+      `keyvault secret show --vault-name ${ctx.keyVaultName} --name sql-admin-password --query value`,
+    );
+  }
   const connectionString = `Server=tcp:${ctx.sqlServerFqdn},1433;Initial Catalog=${dbName};Persist Security Info=False;User ID=${adminUser};Password=${kvPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;`;
   await azQuiet(
     `keyvault secret set --vault-name ${ctx.keyVaultName} --name sql-connection-string --value "${connectionString.replace(/"/g, '\\"')}"`,

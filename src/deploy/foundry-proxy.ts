@@ -120,12 +120,21 @@ export async function configureFoundry(ctx: DeployContext): Promise<void> {
       `keyvault secret set --vault-name ${ctx.keyVaultName} --name foundry-customer-token --value "${tokenPayload.token}"`,
     );
 
-    // Verify-after-write — same pattern as 104-J license master.
+    // Verify-after-write — same pattern as 104-J license master. Compare on
+    // shape + length + byte-for-byte after trim. `az ... -o tsv` can append
+    // whitespace or \r on some platforms; strip all trailing whitespace to
+    // avoid a false "mismatch" warning that confuses the operator into
+    // thinking the KV write failed when it actually succeeded.
     const readback = await az(
       `keyvault secret show --vault-name ${ctx.keyVaultName} --name foundry-customer-token --query value -o tsv`,
     );
-    if (readback.exitCode !== 0 || readback.stdout.trim() !== tokenPayload.token) {
-      s.warn('  Foundry proxy: KV read-back mismatch — falling back to legacy path');
+    const readValue = (readback.stdout || '').replace(/\s+$/g, '');
+    const parts = readValue.split('.');
+    const shapeOk = parts.length === 3 && parts.every((p) => p.length > 0);
+    if (readback.exitCode !== 0 || !shapeOk || readValue.length !== tokenPayload.token.length) {
+      s.warn(
+        `  Foundry proxy: KV read-back mismatch — falling back to legacy path (exit=${readback.exitCode}, shape_ok=${shapeOk}, len_read=${readValue.length}, len_expect=${tokenPayload.token.length})`,
+      );
       return;
     }
 
