@@ -53,8 +53,16 @@ $regionShortMap = @{
     'southeastasia'  = 'sea'
 }
 if (-not $regionShortMap.ContainsKey($Region)) {
-    Write-Error "Unknown region '$Region'. Add it to \$regionShortMap at the top of this script."
-    exit 1
+    Write-Host ""
+    Write-Host "✗ Unknown region '$Region'." -ForegroundColor Red
+    Write-Host "  Known regions:" -ForegroundColor Red
+    foreach ($k in ($regionShortMap.Keys | Sort-Object)) {
+        Write-Host "    $k" -ForegroundColor Red
+    }
+    Write-Host ""
+    Write-Host "  (To add another region, edit the `$regionShortMap table at the top of this script.)" -ForegroundColor Yellow
+    Write-Host ""
+    return
 }
 $rs = $regionShortMap[$Region]
 
@@ -388,5 +396,10 @@ if ($Save) {
     Write-Host "Report saved to: $Save" -ForegroundColor Green
 }
 
-# Exit code for CI / automation
-if ($fail -gt 0) { exit 1 } else { exit 0 }
+# Set a global exit-code variable that CI / callers can inspect without
+# our script actually terminating the parent shell. Callers that want
+# hard exit behaviour can inspect $LASTEXITCODE — we mirror it here.
+$global:LASTEXITCODE = if ($fail -gt 0) { 1 } else { 0 }
+# Don't `exit` — that closes the parent terminal when PS was launched
+# with -File. Just return so the script ends cleanly in interactive use.
+return
