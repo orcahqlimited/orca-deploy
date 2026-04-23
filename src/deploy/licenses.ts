@@ -1,6 +1,6 @@
 import https from 'node:https';
 import type { DeployContext } from '../types.js';
-import { azQuiet } from '../utils/az.js';
+import { azQuiet, azTsv } from '../utils/az.js';
 import * as log from '../utils/log.js';
 
 // Stable ORCA HQ hostname fronted by orca-hq-proxy (Cloudflare Worker).
@@ -64,6 +64,32 @@ export async function provisionLicenses(ctx: DeployContext): Promise<void> {
   await azQuiet(
     `keyvault secret set --vault-name ${ctx.keyVaultName} --name orca-license-master --value "${ctx.licenceToken}"`,
   );
+
+  // 104-J: verify-after-write. Re-read the secret from KV and confirm it's
+  // a plausible JWT (three base64url parts) before proceeding. Catches the
+  // case where `az keyvault secret set` silently truncates a long token
+  // (seen once when the shell interpreted an embedded `$` in the payload),
+  // or where the vault RBAC isn't yet fully propagated and the write
+  // landed on a different scope.
+  try {
+    const readback = await azTsv(
+      `keyvault secret show --vault-name ${ctx.keyVaultName} --name orca-license-master --query value`,
+    );
+    const parts = readback.split('.');
+    if (parts.length !== 3 || !parts.every((p) => p.length > 0)) {
+      throw new Error(
+        `license master secret does not match 3-part JWT shape (got ${parts.length} parts)`,
+      );
+    }
+    if (readback !== ctx.licenceToken) {
+      throw new Error(
+        `license master read-back differs from written value (length ${readback.length} vs ${ctx.licenceToken.length})`,
+      );
+    }
+  } catch (err: any) {
+    s.fail(`  License master verify failed: ${err.message}`);
+    throw err;
+  }
 
   // Child licences (one per connector the customer deploys) are still issued
   // by the licence service. The service endpoint currently doesn't require
