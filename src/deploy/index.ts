@@ -5,6 +5,8 @@ import { createKeyVault } from './keyvault.js';
 import { createManagedIdentity } from './identity.js';
 import { createSqlServer } from './sql-server.js';
 import { createPiiEncryptionKey } from './pii-encryption.js';
+import { createOrcaKek } from './kek.js';
+import { createCustomerStorage } from './customer-storage.js';
 import { createEntraApp, updateEntraRedirectUris } from './entra.js';
 import { createVnet } from './vnet.js';
 import { createEnvironment } from './environment.js';
@@ -51,6 +53,14 @@ export async function deploy(ctx: DeployContext): Promise<void> {
     // Step 4b: PII encryption key — AES-256 in Key Vault (INTENT-104 §104-C).
     //          Existence-guarded — never regenerated, rotation is separate.
     await createPiiEncryptionKey(ctx);
+
+    // Step 4c: Envelope-encryption KEK — RSA-2048 in KV, wrap/unwrap bound
+    //          to the gateway MI (INTENT-104 §104-D).
+    await createOrcaKek(ctx);
+
+    // Step 4d: Customer storage account for encrypted personal-brain blobs,
+    //          Storage Blob Data Contributor on the gateway MI (§104-E).
+    await createCustomerStorage(ctx);
 
     // Step 5: Entra App Registration
     await createEntraApp(ctx);
