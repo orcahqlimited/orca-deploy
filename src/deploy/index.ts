@@ -3,6 +3,8 @@ import { createResourceGroup } from './resource-group.js';
 import { createAcr } from './acr.js';
 import { createKeyVault } from './keyvault.js';
 import { createManagedIdentity } from './identity.js';
+import { createSqlServer } from './sql-server.js';
+import { createPiiEncryptionKey } from './pii-encryption.js';
 import { createEntraApp, updateEntraRedirectUris } from './entra.js';
 import { createVnet } from './vnet.js';
 import { createEnvironment } from './environment.js';
@@ -39,6 +41,16 @@ export async function deploy(ctx: DeployContext): Promise<void> {
 
     // Step 4: Managed Identity + RBAC
     await createManagedIdentity(ctx);
+
+    // Step 4a: Azure SQL + orca-pii-vault DB (INTENT-104 §104-A).
+    //          Provisions the PII token store + equity ledger schema.
+    //          Must come before Step 5 so the gateway can bind the
+    //          sql-connection-string secretRef at Container App creation.
+    await createSqlServer(ctx);
+
+    // Step 4b: PII encryption key — AES-256 in Key Vault (INTENT-104 §104-C).
+    //          Existence-guarded — never regenerated, rotation is separate.
+    await createPiiEncryptionKey(ctx);
 
     // Step 5: Entra App Registration
     await createEntraApp(ctx);
