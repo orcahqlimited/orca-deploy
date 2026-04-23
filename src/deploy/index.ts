@@ -17,6 +17,7 @@ import { deployAksQdrant } from './aks-qdrant.js';
 import { bindCustomGatewayDomain } from './custom-domain.js';
 import { runHealthChecks, printSummary } from './health.js';
 import { provisionLicenses } from './licenses.js';
+import { configureFoundry } from './foundry-proxy.js';
 import {
   createEligibilityGroup,
   addGraphPermissions,
@@ -79,6 +80,14 @@ export async function deploy(ctx: DeployContext): Promise<void> {
 
     // Step 5b: Provision ORCA licences (after Key Vault, before containers)
     await provisionLicenses(ctx);
+
+    // Step 5b2: Foundry proxy customer token (INTENT-104 §104-I).
+    //           Calls orca-license-service /api/foundry/token with the master
+    //           licence, stores the returned JWT in customer KV as
+    //           foundry-customer-token. Graceful degrade: if the endpoint
+    //           isn't yet deployed, warns and falls back to legacy Foundry
+    //           keys (existing wiring elsewhere in the installer).
+    await configureFoundry(ctx);
 
     // Step 5c: ORCA-Eligible Entra group (gates who receives a personal brain)
     await createEligibilityGroup(ctx);
