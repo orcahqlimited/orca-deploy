@@ -145,6 +145,10 @@ export async function deployGateway(ctx: DeployContext): Promise<void> {
     `AZURE_CLIENT_ID=${ctx.miClientId}`,
     `QDRANT_URL=${ctx.qdrantInternalUrl || 'http://qdrant:6333'}`,
     `SUPPORT_API_URL=${ORCA_HQ_SUPPORT_API_URL}`,
+    // INTENT-104 §104-DD — HQ Observability Bridge opt-out passthrough.
+    // Default: customer posts errors/warnings/aggregates to telemetry.orcahq.ai.
+    // Set `ORCA_TELEMETRY=off` on the `docker run` invocation to disable.
+    `ORCA_TELEMETRY=${process.env.ORCA_TELEMETRY || 'on'}`,
   ];
 
   if (ctx.eligibilityGroupOid) {
@@ -213,6 +217,17 @@ export async function deployGateway(ctx: DeployContext): Promise<void> {
       );
     }
   }
+
+  // INTENT-104 §104-I — bind the Foundry proxy customer token if
+  // configureFoundry() successfully issued one. Presence of
+  // ctx.foundryCustomerToken is the discriminator between "proxy mode"
+  // (customer uses foundry.orcahq.ai, no HQ keys in their KV) and legacy
+  // mode (direct-to-Foundry with an api-key).
+  if (ctx.foundryCustomerToken) {
+    kvSecrets.push(
+      `foundry-customer-token=keyvaultref:https://${ctx.keyVaultName}.vault.azure.net/secrets/foundry-customer-token,identityref:${ctx.miId}`,
+    );
+  }
   await azQuiet(
     `containerapp secret set --name ${appName} --resource-group ${ctx.resourceGroup} ` +
       `--secrets ${kvSecrets.map((s) => `"${s}"`).join(' ')}`
@@ -241,6 +256,20 @@ export async function deployGateway(ctx: DeployContext): Promise<void> {
   }
   if (ctx.credentials['foundry-api-key-swc']) {
     allEnvVars.push('FOUNDRY_SWC_API_KEY=secretref:foundry-api-key-swc');
+  }
+
+  // INTENT-104 §104-I — Foundry proxy mode. Overrides FOUNDRY_ENDPOINT set
+  // in plainEnvVars + gateway reads FOUNDRY_CUSTOMER_TOKEN via secretRef +
+  // attaches Authorization: Bearer instead of the Azure api-key header.
+  if (ctx.foundryCustomerToken) {
+    const proxyIdx = allEnvVars.findIndex((v) => v.startsWith('FOUNDRY_ENDPOINT='));
+    if (proxyIdx >= 0) {
+      allEnvVars[proxyIdx] = 'FOUNDRY_ENDPOINT=https://foundry.orcahq.ai';
+    } else {
+      allEnvVars.push('FOUNDRY_ENDPOINT=https://foundry.orcahq.ai');
+    }
+    allEnvVars.push(`FOUNDRY_CUSTOMER_SLUG=${ctx.customerSlug}`);
+    allEnvVars.push('FOUNDRY_CUSTOMER_TOKEN=secretref:foundry-customer-token');
   }
   if (ctx.credentials['app-insights-conn-string']) {
     allEnvVars.push('APPINSIGHTS_CONNECTION_STRING=secretref:app-insights-conn-string');

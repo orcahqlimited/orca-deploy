@@ -85,6 +85,20 @@ export async function confirmDeployment(ctx: DeployContext): Promise<boolean> {
   line('  Phase 6 — Verification', false);
   line('    • Health checks on every Container App');
   line('    • Post-install estate report (install.complete fires only on clean exit)');
+  log.blank();
+
+  // Operational-telemetry consent (INTENT-104 §104-DD / INTENT-107 §107-E).
+  // Be explicit about what flows, where, and how to opt out.
+  line('  Operational telemetry', false);
+  line('    The gateway posts errors, warnings, and tool-usage aggregates to');
+  line('    ' + chalk.white('https://telemetry.orcahq.ai'));
+  line('    so ORCA HQ can diagnose issues proactively. What is sent is a');
+  line('    short, structured event name + bounded numeric/enum/string fields');
+  line('    (e.g. "tool_call" + latency, "foundry_http_error" + status code).');
+  line('    What is never sent: brain content, user message bodies, Entra');
+  line('    identities, Key Vault secrets, Foundry api-keys, licence JWTs.');
+  line('    Opt out by setting ' + chalk.white('ORCA_TELEMETRY=off') + ' on the gateway Container App');
+  line('    (installer re-run required to persist the change).');
   log.divider();
 
   return confirm({ message: 'Proceed with deployment?', default: true });
