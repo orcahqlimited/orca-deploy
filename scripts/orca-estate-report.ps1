@@ -1,3 +1,4 @@
+﻿#Requires -Version 5.1
 # =============================================================================
 # orca-estate-report.ps1
 # -----------------------------------------------------------------------------
@@ -19,7 +20,7 @@
 #   - SQL Server + database + table list
 #   - Gateway /health endpoint
 #   - Custom domain binding (if any)
-#   - Final summary with ✓ / ⚠ / ✗ counts
+#   - Final summary with [OK] / [WARN] / [FAIL] counts
 #
 # RUNS ENTIRELY READ-ONLY. Mutates nothing. Safe to run at any time.
 # Requires az CLI logged in to the customer tenant.
@@ -40,7 +41,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
-# ───── Region short code map (mirrors src/types.ts REGIONS) ─────
+# ----- Region short code map (mirrors src/types.ts REGIONS) -----
 $regionShortMap = @{
     'uksouth'        = 'uks'
     'ukwest'         = 'ukw'
@@ -54,7 +55,7 @@ $regionShortMap = @{
 }
 if (-not $regionShortMap.ContainsKey($Region)) {
     Write-Host ""
-    Write-Host "✗ Unknown region '$Region'." -ForegroundColor Red
+    Write-Host "[FAIL] Unknown region '$Region'." -ForegroundColor Red
     Write-Host "  Known regions:" -ForegroundColor Red
     foreach ($k in ($regionShortMap.Keys | Sort-Object)) {
         Write-Host "    $k" -ForegroundColor Red
@@ -66,7 +67,7 @@ if (-not $regionShortMap.ContainsKey($Region)) {
 }
 $rs = $regionShortMap[$Region]
 
-# ───── Naming convention (mirrors src/utils/naming.ts) ─────
+# ----- Naming convention (mirrors src/utils/naming.ts) -----
 $rg       = "rg-orca-$CustomerSlug-$rs"
 $aksRg    = "rg-orca-$CustomerSlug-aks-$rs"
 $kv       = "kv-orca-$CustomerSlug-$rs"
@@ -79,7 +80,7 @@ $sqlSrv   = "orca-$CustomerSlug-sql-$rs"
 $storage  = "orca$CustomerSlug" + "blobs"
 $entraApp = "ORCA Intelligence Connectors"
 
-# ───── Report accumulator ─────
+# ----- Report accumulator -----
 $lines = [System.Collections.ArrayList]@()
 $pass  = 0
 $warn  = 0
@@ -89,32 +90,32 @@ function Say($text) {
     [void]$lines.Add($text)
 }
 function Ok($text) {
-    Say "  ✓ $text"
+    Say "  [OK] $text"
     $script:pass++
 }
 function Warn($text) {
-    Say "  ⚠ $text"
+    Say "  [WARN] $text"
     $script:warn++
 }
 function Fail($text) {
-    Say "  ✗ $text"
+    Say "  [FAIL] $text"
     $script:fail++
 }
 function Heading($text) {
     Say ""
-    Say "═══ $text ═══"
+    Say "=== $text ==="
 }
 
-# ───── Header ─────
-Say "ORCA ESTATE REPORT — $CustomerSlug / $Region"
+# ----- Header -----
+Say "ORCA ESTATE REPORT - $CustomerSlug / $Region"
 Say "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')"
 Say "Run by:    $((az account show --query user.name -o tsv 2>$null))"
 Say "Tenant:    $((az account show --query tenantId -o tsv 2>$null))"
 Say "Subscription: $((az account show --query name -o tsv 2>$null))"
 Say ""
-Say ("─" * 70)
+Say ("-" * 70)
 
-# ───── [1] Resource groups ─────
+# ----- [1] Resource groups -----
 Heading "[1/10] RESOURCE GROUPS"
 foreach ($group in @($rg, $aksRg)) {
     $exists = az group exists --name $group 2>$null
@@ -122,15 +123,15 @@ foreach ($group in @($rg, $aksRg)) {
         $resourceCount = (az resource list -g $group --query "length(@)" -o tsv 2>$null)
         Ok "$group ($resourceCount resources)"
     } else {
-        Fail "$group — not found"
+        Fail "$group - not found"
     }
 }
 
-# ───── [2] Key Vault secrets ─────
+# ----- [2] Key Vault secrets -----
 Heading "[2/10] KEY VAULT"
 $kvExists = az keyvault show --name $kv --query name -o tsv 2>$null
 if (-not $kvExists) {
-    Fail "$kv — not found"
+    Fail "$kv - not found"
 } else {
     Say "  Vault: $kv"
     $secrets = az keyvault secret list --vault-name $kv --query "[].name" -o tsv 2>$null
@@ -156,20 +157,20 @@ if (-not $kvExists) {
             $val = az keyvault secret show --vault-name $kv --name $name --query value -o tsv 2>$null
             if ($name -eq 'orca-license-master') {
                 $parts = ($val -split '\.').Length
-                if ($parts -eq 3) { Ok "$name (JWT, 3 parts — valid shape)" }
-                else { Fail "$name (JWT has $parts parts — expected 3)" }
+                if ($parts -eq 3) { Ok "$name (JWT, 3 parts - valid shape)" }
+                else { Fail "$name (JWT has $parts parts - expected 3)" }
             } elseif ($name -eq 'pii-encryption-key') {
-                if ($val -match '^[0-9a-fA-F]{64}$') { Ok "$name (64 hex chars — AES-256)" }
-                else { Fail "$name (length $($val.Length) — expected 64 hex chars)" }
+                if ($val -match '^[0-9a-fA-F]{64}$') { Ok "$name (64 hex chars - AES-256)" }
+                else { Fail "$name (length $($val.Length) - expected 64 hex chars)" }
             } elseif ($name -eq 'sql-connection-string') {
                 $server = ($val -split ';' | Where-Object { $_ -like 'Server=*' })
                 if ($server -and $server -notmatch '<|>') { Ok "$name ($server)" }
-                else { Fail "$name (malformed — $server)" }
+                else { Fail "$name (malformed - $server)" }
             } else {
                 Ok "$name (present, length $($val.Length))"
             }
         } else {
-            Fail "$name — missing"
+            Fail "$name - missing"
         }
     }
 
@@ -177,11 +178,11 @@ if (-not $kvExists) {
     $unexpected = $secretArr | Where-Object { $_ -notin $expected -and $_ -notlike 'orca-license-*' -and $_ -notlike 'customer-licence-*' -and $_ -notlike 'freeagent-*' -and $_ -notlike 'freshdesk-*' -and $_ -notlike 'freshsales-*' -and $_ -notlike 'isms-*' -and $_ -notlike 'ado-*' -and $_ -notlike 'entra-*' -and $_ -notlike 'security-connector-*' -and $_ -notlike 'orca-signing-*' -and $_ -notlike 'graph-*' -and $_ -notlike 'app-*' -and $_ -notlike 'copilot-*' }
     if ($Detailed -and $unexpected.Count -gt 0) {
         Say "  Other secrets (informational):"
-        foreach ($u in $unexpected) { Say "    · $u" }
+        foreach ($u in $unexpected) { Say "    * $u" }
     }
 }
 
-# ───── [3] Key Vault RSA key (orca-kek) ─────
+# ----- [3] Key Vault RSA key (orca-kek) -----
 Heading "[3/10] KEY VAULT RSA KEYS"
 $kek = az keyvault key show --vault-name $kv --name orca-kek --query "{kty:key.kty, kid:key.kid, ops:key.key_ops}" -o json 2>$null | ConvertFrom-Json
 if ($kek) {
@@ -192,14 +193,14 @@ if ($kek) {
         Fail "orca-kek exists but wrong type/ops (kty=$($kek.kty), ops=$ops)"
     }
 } else {
-    Fail "orca-kek — not found"
+    Fail "orca-kek - not found"
 }
 
-# ───── [4] Managed Identity + role assignments ─────
+# ----- [4] Managed Identity + role assignments -----
 Heading "[4/10] MANAGED IDENTITY"
 $miId = az identity show -g $rg -n $mi --query principalId -o tsv 2>$null
 if (-not $miId) {
-    Fail "$mi — not found"
+    Fail "$mi - not found"
 } else {
     Say "  Identity: $mi"
     Say "  Principal ID: $miId"
@@ -221,16 +222,16 @@ if (-not $miId) {
     if ($Detailed) {
         Say "  All role assignments:"
         foreach ($r in $roles) {
-            Say "    · $($r.role) → $(Split-Path $r.scope -Leaf)"
+            Say "    * $($r.role) -> $(Split-Path $r.scope -Leaf)"
         }
     }
 }
 
-# ───── [5] Entra app ─────
+# ----- [5] Entra app -----
 Heading "[5/10] ENTRA APP REGISTRATION"
 $app = az ad app list --display-name $entraApp --query "[0]" -o json 2>$null | ConvertFrom-Json
 if (-not $app) {
-    Fail "`"$entraApp`" — not found"
+    Fail "`"$entraApp`" - not found"
 } else {
     Say "  App: $entraApp"
     Say "  AppId: $($app.appId)"
@@ -240,26 +241,26 @@ if (-not $app) {
     if ($roleCount -ge 5) {
         Ok "App roles: $roleCount defined"
         foreach ($r in $app.appRoles) {
-            Say "    · $($r.displayName) ($($r.value))"
+            Say "    * $($r.displayName) ($($r.value))"
         }
     } else {
-        Fail "App roles: $roleCount — expected 5 (CL-ORCAHQ-0132)"
+        Fail "App roles: $roleCount - expected 5 (CL-ORCAHQ-0132)"
     }
 
     $webCount = ($app.web.redirectUris | Measure-Object).Count
     $spaCount = ($app.spa.redirectUris | Measure-Object).Count
-    Ok "Redirect URIs — web: $webCount, spa: $spaCount"
+    Ok "Redirect URIs - web: $webCount, spa: $spaCount"
 
     if ($app.spa.redirectUris -contains 'https://claude.ai/api/mcp/auth_callback') {
         Ok "claude.ai callback under SPA (correct for PKCE)"
     } elseif ($app.web.redirectUris -contains 'https://claude.ai/api/mcp/auth_callback') {
-        Fail "claude.ai callback under WEB — should be SPA (CL-ORCAHQ-0133)"
+        Fail "claude.ai callback under WEB - should be SPA (CL-ORCAHQ-0133)"
     } else {
         Fail "claude.ai callback not registered"
     }
 }
 
-# ───── [6] Container Apps ─────
+# ----- [6] Container Apps -----
 Heading "[6/10] CONTAINER APPS"
 $cas = az containerapp list -g $rg --query "[].{name:name, image:properties.template.containers[0].image, running:properties.runningStatus, rev:properties.latestRevisionName}" -o json 2>$null | ConvertFrom-Json
 if (-not $cas -or $cas.Count -eq 0) {
@@ -271,32 +272,32 @@ if (-not $cas -or $cas.Count -eq 0) {
         if ($ca) {
             $tag = ($ca.image -split ':')[-1]
             if ($ca.running -eq 'Running') {
-                Ok "$name — Running ($tag)"
+                Ok "$name - Running ($tag)"
             } else {
-                Warn "$name — $($ca.running) ($tag)"
+                Warn "$name - $($ca.running) ($tag)"
             }
         } else {
-            Fail "$name — not deployed"
+            Fail "$name - not deployed"
         }
     }
     $connectors = $cas | Where-Object { $_.name -like '*-connector' }
     Say "  Connectors ($($connectors.Count)):"
     foreach ($c in $connectors) {
         $tag = ($c.image -split ':')[-1]
-        Say "    · $($c.name) ($tag, $($c.running))"
+        Say "    * $($c.name) ($tag, $($c.running))"
     }
 }
 
-# ───── [7] AKS + Qdrant ─────
+# ----- [7] AKS + Qdrant -----
 Heading "[7/10] AKS + QDRANT"
 $aksState = az aks show -g $aksRg -n $aks --query "{state:provisioningState, power:powerState.code, k8s:kubernetesVersion}" -o json 2>$null | ConvertFrom-Json
 if (-not $aksState) {
-    Fail "AKS $aks — not found"
+    Fail "AKS $aks - not found"
 } else {
     Say "  Cluster: $aks (K8s $($aksState.k8s), $($aksState.power))"
     if ($aksState.state -ne 'Succeeded') { Warn "Provisioning state: $($aksState.state)" }
 
-    # Get Qdrant service via `az aks command invoke` — known-good pattern from runbook
+    # Get Qdrant service via `az aks command invoke` - known-good pattern from runbook
     $svcOut = az aks command invoke -g $aksRg -n $aks --command "kubectl -n qdrant get svc qdrant -o jsonpath='{.spec.type},{.status.loadBalancer.ingress[0].ip}'" -o json 2>$null | ConvertFrom-Json
     if ($svcOut -and $svcOut.logs) {
         $svcParts = $svcOut.logs.Trim() -split ','
@@ -305,7 +306,7 @@ if (-not $aksState) {
         if ($svcVip -match '^10\.|^172\.(1[6-9]|2[0-9]|3[0-1])\.|^192\.168\.') {
             Ok "Qdrant svc: $svcType, VIP $svcVip (internal, RFC 1918)"
         } elseif ($svcVip) {
-            Warn "Qdrant svc: $svcType, VIP $svcVip (NOT internal — CL-ORCAHQ-0126)"
+            Warn "Qdrant svc: $svcType, VIP $svcVip (NOT internal - CL-ORCAHQ-0126)"
         } else {
             Warn "Qdrant svc: $svcType, VIP pending"
         }
@@ -318,7 +319,7 @@ if (-not $aksState) {
             foreach ($c in $colls) {
                 $cntOut = az aks command invoke -g $aksRg -n $aks --command "kubectl -n qdrant exec qdrant-0 -c qdrant -- curl -s http://localhost:6333/collections/$($c.name)" -o json 2>$null | ConvertFrom-Json
                 $cnt = ($cntOut.logs | ConvertFrom-Json).result.points_count
-                Say "    · $($c.name): $cnt points"
+                Say "    * $($c.name): $cnt points"
             }
         }
     } else {
@@ -326,11 +327,11 @@ if (-not $aksState) {
     }
 }
 
-# ───── [8] SQL ─────
+# ----- [8] SQL -----
 Heading "[8/10] SQL SERVER + PII VAULT"
 $sql = az sql server show -g $rg -n $sqlSrv --query "{fqdn:fullyQualifiedDomainName, state:state, publicAccess:publicNetworkAccess}" -o json 2>$null | ConvertFrom-Json
 if (-not $sql) {
-    Fail "$sqlSrv — not found (CL-ORCAHQ-0129 — installer may not have provisioned SQL)"
+    Fail "$sqlSrv - not found (CL-ORCAHQ-0129 - installer may not have provisioned SQL)"
 } else {
     Say "  Server: $($sql.fqdn)"
     Ok "State: $($sql.state)"
@@ -339,11 +340,11 @@ if (-not $sql) {
     if ($db) {
         Ok "Database orca-pii-vault ($($db.tier), $($db.status))"
     } else {
-        Fail "orca-pii-vault database — not found"
+        Fail "orca-pii-vault database - not found"
     }
 }
 
-# ───── [9] Gateway health ─────
+# ----- [9] Gateway health -----
 Heading "[9/10] GATEWAY HEALTH"
 $fqdn = az containerapp show -g $rg -n orca-mcp-gateway --query properties.configuration.ingress.fqdn -o tsv 2>$null
 if ($fqdn) {
@@ -359,10 +360,10 @@ if ($fqdn) {
         Fail "Could not reach /health: $($_.Exception.Message)"
     }
 } else {
-    Fail "orca-mcp-gateway — no ingress FQDN (not deployed or still starting)"
+    Fail "orca-mcp-gateway - no ingress FQDN (not deployed or still starting)"
 }
 
-# ───── [10] Custom domain ─────
+# ----- [10] Custom domain -----
 Heading "[10/10] CUSTOM DOMAIN"
 $customHostnames = az containerapp hostname list -g $rg -n orca-mcp-gateway --query "[].{hostname:name, binding:bindingType}" -o json 2>$null | ConvertFrom-Json
 if ($customHostnames -and $customHostnames.Count -gt 0) {
@@ -370,23 +371,23 @@ if ($customHostnames -and $customHostnames.Count -gt 0) {
         Ok "$($h.hostname) ($($h.binding))"
     }
 } else {
-    Say "  (none — using Azure-assigned FQDN)"
+    Say "  (none - using Azure-assigned FQDN)"
 }
 
-# ───── Summary ─────
+# ----- Summary -----
 Say ""
-Say ("─" * 70)
+Say ("-" * 70)
 Say "SUMMARY: $pass passed, $warn warnings, $fail failed"
 Say ""
 if ($fail -eq 0 -and $warn -eq 0) {
-    Say "✅ Estate looks fully healthy. Nothing to flag."
+    Say "[ALL GREEN] Estate looks fully healthy. Nothing to flag."
 } elseif ($fail -eq 0) {
-    Say "⚠ Estate is functional but has $warn non-blocking items flagged above."
+    Say "[WARN] Estate is functional but has $warn non-blocking items flagged above."
 } else {
-    Say "✗ Estate has $fail critical issues. See flags above."
+    Say "[FAIL] Estate has $fail critical issues. See flags above."
 }
 
-# ───── Emit ─────
+# ----- Emit -----
 $output = $lines -join "`n"
 Write-Output $output
 
@@ -398,8 +399,8 @@ if ($Save) {
 
 # Set a global exit-code variable that CI / callers can inspect without
 # our script actually terminating the parent shell. Callers that want
-# hard exit behaviour can inspect $LASTEXITCODE — we mirror it here.
+# hard exit behaviour can inspect $LASTEXITCODE - we mirror it here.
 $global:LASTEXITCODE = if ($fail -gt 0) { 1 } else { 0 }
-# Don't `exit` — that closes the parent terminal when PS was launched
+# Don't `exit` - that closes the parent terminal when PS was launched
 # with -File. Just return so the script ends cleanly in interactive use.
 return
