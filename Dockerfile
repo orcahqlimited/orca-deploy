@@ -1,11 +1,16 @@
 # ORCA installer — single-image customer installer.
 #
-# Runs the entire deploy CLI inside a hermetic container. Customer mounts
-# their Azure CLI session (~/.azure) so the installer inherits their auth.
+# Runs the entire deploy CLI inside a hermetic container. Starting with
+# v0.2.4 (INTENT-104 §104-O) the container owns its own Azure CLI session
+# via a named Docker volume, so the customer never has to share their host
+# `~/.azure` directory. First run into an empty volume runs
+# `az login --use-device-code` inside the container; subsequent runs reuse
+# the persisted token.
 #
 # Usage:
+#   docker volume create orca-azure-session        # once, per workstation
 #   docker run --rm -it \
-#     -v ~/.azure:/root/.azure \
+#     -v orca-azure-session:/root/.azure \
 #     -e ORCA_LICENCE_KEY=<your licence> \
 #     ghcr.io/orcahqlimited/orca-installer:latest
 #
@@ -63,5 +68,16 @@ COPY scripts/ ./scripts/
 RUN node -e "import('./dist/licence/verify.js').then(() => console.log('verify ok'))"
 
 ENV NODE_ENV=production
+
+# Container-owned Azure CLI session volume (INTENT-104 §104-O). Customers
+# mount a named Docker volume at this path instead of the host `~/.azure`
+# directory, avoiding the CL-0115/0116/0117 failure modes around Windows
+# file sharing, stale host sessions, and multi-tenant host profiles. First
+# run of the installer into an empty volume runs `az login --use-device-code`
+# inline; subsequent runs reuse the persisted token.
+#
+#   docker volume create orca-azure-session   # once
+#   docker run --rm -it -v orca-azure-session:/root/.azure ...
+VOLUME ["/root/.azure"]
 
 ENTRYPOINT ["node", "/orca/dist/index.js"]

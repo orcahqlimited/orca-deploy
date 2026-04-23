@@ -187,16 +187,19 @@ cat <<EOF
 
 ${C_BOLD}═══ Bootstrap complete ═══${C_RESET}
 
-Your workstation is ready. Three remaining steps to deploy ORCA:
+Your workstation is ready. Two remaining steps to deploy ORCA:
 
-  ${C_BOLD}1) Sign in to Azure${C_RESET}  (browser opens automatically)
-     ${C_DIM}az login --tenant <your-tenant-id>${C_RESET}
-
-  ${C_BOLD}2) Select your subscription${C_RESET}
-     ${C_DIM}az account set --subscription "<subscription name or id>"${C_RESET}
-
-  ${C_BOLD}3) Launch the installer${C_RESET}
+  ${C_BOLD}1) Launch the installer${C_RESET}
      ${C_DIM}cd ${ORCA_DIR}/package && node dist/index.js${C_RESET}
+
+     The installer will run device-code sign-in inline — no need to run
+     ${C_BOLD}az login${C_RESET} yourself first. When it prompts you, open the URL
+     it prints in any browser and enter the short code shown. Your
+     session persists in the container for subsequent re-runs
+     (INTENT-ORCAHQ-104 §104-O).
+
+  ${C_BOLD}2) Enter your licence key when asked${C_RESET}
+     You should have received this from your ORCA HQ contact.
 
 The installer will ask for:
   • Your customer slug (3-10 lowercase letters/digits)

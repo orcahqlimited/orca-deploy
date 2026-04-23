@@ -4,6 +4,7 @@ import { password } from '@inquirer/prompts';
 import type { DeployContext } from './types.js';
 import { showBanner } from './banner.js';
 import { showComingSoon } from './coming-soon.js';
+import { ensureAzureSession } from './prompts/azure-login.js';
 import { selectTenant, selectSubscription } from './prompts/azure-context.js';
 import { getCustomerAndRegion } from './prompts/welcome.js';
 import { selectConnectors } from './prompts/connectors.js';
@@ -18,6 +19,12 @@ import * as log from './utils/log.js';
 async function main(): Promise<void> {
   // 1. Banner
   showBanner();
+
+  // 1b. Container-owned Azure CLI session (INTENT-104 §104-O). Detect an
+  //     existing session in the mounted /root/.azure volume, or run device-
+  //     code login inline. Eliminates the host `.azure` mount and the three
+  //     CL-ORCAHQ-0115/0116/0117 failure modes it produced.
+  await ensureAzureSession();
 
   // 2. Azure Context — Tenant & Subscription
   const { tenantId, tenantName } = await selectTenant();
