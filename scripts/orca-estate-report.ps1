@@ -184,16 +184,23 @@ if (-not $kvExists) {
 
 # ----- [3] Key Vault RSA key (orca-kek) -----
 Heading "[3/10] KEY VAULT RSA KEYS"
-$kek = az keyvault key show --vault-name $kv --name orca-kek --query "{kty:key.kty, kid:key.kid, ops:key.key_ops}" -o json 2>$null | ConvertFrom-Json
-if ($kek) {
-    $ops = ($kek.ops -join ',')
-    if ($kek.kty -eq 'RSA' -and $ops -match 'wrapKey' -and $ops -match 'unwrapKey') {
-        Ok "orca-kek (RSA, ops: $ops)"
-    } else {
-        Fail "orca-kek exists but wrong type/ops (kty=$($kek.kty), ops=$ops)"
-    }
-} else {
+# Query kty and key_ops as separate scalar/array lookups - wrapping both in a
+# {...} projection and ConvertFrom-Json has been observed to lose the array
+# on some PS 5.1 hosts (ops comes back empty). Separate calls are bulletproof.
+$kekKty = az keyvault key show --vault-name $kv --name orca-kek --query "key.kty" -o tsv 2>$null
+if (-not $kekKty) {
     Fail "orca-kek - not found"
+} else {
+    $kekOps = az keyvault key show --vault-name $kv --name orca-kek --query "key.key_ops" -o tsv 2>$null
+    # TSV of an array is tab-separated; flatten to a CSV string for display/matching
+    $opsJoined = ($kekOps -split "`t|`n" | Where-Object { $_ }) -join ','
+    $hasWrap   = $opsJoined -match 'wrapKey'
+    $hasUnwrap = $opsJoined -match 'unwrapKey'
+    if ($kekKty -eq 'RSA' -and $hasWrap -and $hasUnwrap) {
+        Ok "orca-kek (RSA, ops: $opsJoined)"
+    } else {
+        Fail "orca-kek exists but wrong type/ops (kty=$kekKty, ops=$opsJoined)"
+    }
 }
 
 # ----- [4] Managed Identity + role assignments -----
