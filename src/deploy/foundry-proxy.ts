@@ -120,22 +120,34 @@ export async function configureFoundry(ctx: DeployContext): Promise<void> {
       `keyvault secret set --vault-name ${ctx.keyVaultName} --name foundry-customer-token --value "${tokenPayload.token}"`,
     );
 
-    // Verify-after-write — same pattern as 104-J license master. Compare on
-    // shape + length + byte-for-byte after trim. `az ... -o tsv` can append
-    // whitespace or \r on some platforms; strip all trailing whitespace to
-    // avoid a false "mismatch" warning that confuses the operator into
-    // thinking the KV write failed when it actually succeeded.
+    // Verify-after-write — same pattern as 104-J license master. We trust
+    // the content check (JWT shape + byte-for-byte equality after trim) as
+    // the source of truth. az CLI's exit code can be non-zero even when
+    // the query returned the correct value (CL-ORCAHQ-0103 — warnings on
+    // stderr, flaky KV RBAC, containerapp-extension hook noise), so we
+    // treat exit-code-only failures as diagnostic rather than blocking.
+    //
+    // `az ... -o tsv` can append \r or extra newlines depending on
+    // platform — strip trailing whitespace before comparing.
     const readback = await az(
       `keyvault secret show --vault-name ${ctx.keyVaultName} --name foundry-customer-token --query value -o tsv`,
     );
     const readValue = (readback.stdout || '').replace(/\s+$/g, '');
     const parts = readValue.split('.');
     const shapeOk = parts.length === 3 && parts.every((p) => p.length > 0);
-    if (readback.exitCode !== 0 || !shapeOk || readValue.length !== tokenPayload.token.length) {
+    const contentOk = readValue === tokenPayload.token;
+    if (!shapeOk || !contentOk) {
       s.warn(
-        `  Foundry proxy: KV read-back mismatch — falling back to legacy path (exit=${readback.exitCode}, shape_ok=${shapeOk}, len_read=${readValue.length}, len_expect=${tokenPayload.token.length})`,
+        `  Foundry proxy: KV read-back mismatch — falling back to legacy path (exit=${readback.exitCode}, shape_ok=${shapeOk}, content_match=${contentOk}, len_read=${readValue.length}, len_expect=${tokenPayload.token.length})`,
       );
       return;
+    }
+    // Content matched. If az also returned non-zero, log diagnostic only
+    // so the anomaly surfaces without blocking the install.
+    if (readback.exitCode !== 0) {
+      log.dim(
+        `    (az read-back exit=${readback.exitCode} but content matches; accepting)`,
+      );
     }
 
     const expiresDays = Math.floor(tokenPayload.expires_in / 86400);
