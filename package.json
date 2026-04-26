@@ -1,7 +1,7 @@
 {
   "name": "@orcahq/deploy",
-  "version": "0.1.0",
-  "description": "ORCA Intelligence Connectors \u2014 Deployment CLI",
+  "version": "0.2.4",
+  "description": "ORCA Intelligence Connectors — Deployment CLI",
   "type": "module",
   "bin": {
     "orca-deploy": "dist/index.js"
