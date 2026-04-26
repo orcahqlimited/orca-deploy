@@ -214,7 +214,16 @@ Expected: completes with the "═══ Bootstrap complete ═══" banner and
 ### Step 2.2 — Run the installer
 
 ```bash
-cd ${HOME}/orca-install/package && node dist/index.js
+docker run --rm -it \
+  -v ~/.azure:/root/.azure \
+  -e ORCA_LICENCE_KEY="<paste licence from operator out-of-band>" \
+  ghcr.io/orcahqlimited/orca-installer:latest
+
+# (the bundled `node dist/index.js` was deprecated in v0.2.4 §104-O — it's
+# now just a sign-post stub that prints the docker command above. The
+# container ships pwsh + sqlcmd + node + az + helm + kubectl preinstalled,
+# so no host-side install dependencies. ~/.azure bind-mount shares the
+# operator's WSL `az login` session into the container.)
 ```
 
 The installer runs in interactive mode. The operator answers prompts:
