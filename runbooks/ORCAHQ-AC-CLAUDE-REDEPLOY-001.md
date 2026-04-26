@@ -62,6 +62,8 @@ If the slug or region is ambiguous, STOP and ask the operator. Do not guess.
 
 Before AC starts Phase 1, ORCA HQ confirms HQ-side infrastructure is in the expected shape. AC's gateway calls HQ services (license, telemetry, support-api, foundry, gateway) — anything broken on the HQ side surfaces as a mystery on the customer side.
 
+> **Note for 2026-04-26 run:** The `hq-live-watch.sh` script queries `orca-license-logs` AppTraces. That table is **empty** — Track A telemetry ingest is half-broken (license-service Table Storage write fails on every batch with EDM type error; LAW write env vars never wired). **Do not rely on hq-live-watch tonight.** Tail the license-service console directly instead: `az containerapp logs show -g rg-orcahq-uks -n orca-license-service-v --follow` — `[telemetry] ingested` lines are where events actually appear. The AC operator's structured reports remain the primary observation channel. Track A repair tracked as TASK-110.
+
 ### 0.1 — Live HQ endpoint health (always do this)
 
 ```bash
