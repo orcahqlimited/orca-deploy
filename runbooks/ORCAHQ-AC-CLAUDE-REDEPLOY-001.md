@@ -109,11 +109,13 @@ Expected: AgileCadence tenant + sub. If wrong tenant, STOP and ask the operator.
 
 ### Step 1.2 — Capture current installer + image versions
 
+> **Naming note (v0.0.2):** workload Container Apps do **NOT** carry the customer slug — `naming.ts` returns hardcoded names (`orca-mcp-gateway`, `orca-copilot`, `orca-governance-portal`, `orca-governance-connector`, `orca-license-service`). Only the *infrastructure* tier (RG, KV, MI, ACR, CAE, SQL, AKS, Storage, VNet) is slug-prefixed. The installer UPDATEs workload apps in place — it does NOT create slug-named parallels alongside.
+
 ```bash
 # What image is the customer-deployed gateway running RIGHT NOW?
 az containerapp show \
   -g rg-orca-${CUSTOMER_SLUG}-uks \
-  -n orca-${CUSTOMER_SLUG}-mcp-gateway \
+  -n orca-mcp-gateway \
   --query "properties.template.containers[0].image" -o tsv
 
 # Same for the other 4 core-product apps:
@@ -121,7 +123,7 @@ for app in license-service copilot governance-portal governance-connector; do
   echo "=== $app ==="
   az containerapp show \
     -g rg-orca-${CUSTOMER_SLUG}-uks \
-    -n orca-${CUSTOMER_SLUG}-${app} \
+    -n orca-${app} \
     --query "properties.template.containers[0].image" -o tsv 2>/dev/null \
     || echo "  (not deployed)"
 done
@@ -176,7 +178,7 @@ az role assignment list \
 ```bash
 GATEWAY_FQDN=$(az containerapp show \
   -g rg-orca-${CUSTOMER_SLUG}-uks \
-  -n orca-${CUSTOMER_SLUG}-mcp-gateway \
+  -n orca-mcp-gateway \
   --query "properties.configuration.ingress.fqdn" -o tsv)
 
 curl -sw "\nstatus=%{http_code}\n" https://${GATEWAY_FQDN}/health
@@ -333,7 +335,7 @@ Expected: enabled=true, updated within the last 30 minutes (i.e. the redeploy cr
 # Confirm the gateway's FOUNDRY_ENDPOINT env var now points at orcahq.ai
 az containerapp show \
   -g rg-orca-${CUSTOMER_SLUG}-uks \
-  -n orca-${CUSTOMER_SLUG}-mcp-gateway \
+  -n orca-mcp-gateway \
   --query "properties.template.containers[0].env[?name=='FOUNDRY_ENDPOINT'].value" \
   -o tsv
 ```
@@ -352,7 +354,7 @@ curl -sw "\nstatus=%{http_code}\n" https://${GATEWAY_FQDN}/_internal/health/sql 
 # Always also run this:
 az containerapp logs show \
   -g rg-orca-${CUSTOMER_SLUG}-uks \
-  -n orca-${CUSTOMER_SLUG}-mcp-gateway \
+  -n orca-mcp-gateway \
   --type system --tail 100 \
   --format text 2>&1 | grep -iE 'ELOGIN|SQL|principal|access denied' | head -20
 ```
@@ -454,7 +456,7 @@ but do contain resource topology that is sensitive.)
 | Phase 2 installer fails on Entra app reuse | Stale credential or consent state | Capture full output. STOP. HQ has runbook ORCAHQ-AGILE-DAY1-FIXUP for this class. |
 | Phase 3.5 SQL ELOGIN | rc-1.0.0 has been bumped past commit 1b09acd at HQ-end without installer support | STOP IMMEDIATELY. Tell HQ. They will retag rc-1.0.0 back to 5de7b4b and you re-run Phase 2. |
 | Phase 3.3 /mcp returns 5xx instead of 401 | Licence-service unreachable from customer gateway, or PEM mismatch | Capture body. Try `curl https://license.orcahq.ai/.well-known/jwks.json` from AC workstation — if that's also broken, HQ side is down. |
-| Customer gateway is unhealthy after Phase 3 and we want to roll back to the prior revision | Install caused a regression we don't immediately understand | Operator runs (single-revision mode is on, so Container Apps swaps active revision atomically): `az containerapp revision list -g rg-orca-${CUSTOMER_SLUG}-uks -n orca-${CUSTOMER_SLUG}-mcp-gateway --query "[].{name:name,active:properties.active,image:properties.template.containers[0].image,createdTime:properties.createdTime}" -o table` to see all revisions; identify the previous revision (one before the active one in `createdTime` order); then `az containerapp ingress traffic set -g rg-orca-${CUSTOMER_SLUG}-uks -n orca-${CUSTOMER_SLUG}-mcp-gateway --revision-weight <previous-revision>=100 latest=0`. After traffic shift, retry `/health` — should return 200 within 60s. STOP further phases, write up the rollback in the report's "Anomalies" section. (Note: `revision deactivate` works if the app is in multiple-revision mode; the traffic-weight command works in either mode.) |
+| Customer gateway is unhealthy after Phase 3 and we want to roll back to the prior revision | Install caused a regression we don't immediately understand | Operator runs (single-revision mode is on, so Container Apps swaps active revision atomically): `az containerapp revision list -g rg-orca-${CUSTOMER_SLUG}-uks -n orca-mcp-gateway --query "[].{name:name,active:properties.active,image:properties.template.containers[0].image,createdTime:properties.createdTime}" -o table` to see all revisions; identify the previous revision (one before the active one in `createdTime` order); then `az containerapp ingress traffic set -g rg-orca-${CUSTOMER_SLUG}-uks -n orca-mcp-gateway --revision-weight <previous-revision>=100 latest=0`. After traffic shift, retry `/health` — should return 200 within 60s. STOP further phases, write up the rollback in the report's "Anomalies" section. (Note: `revision deactivate` works if the app is in multiple-revision mode; the traffic-weight command works in either mode.) |
 | Anything not in this table | Unknown — write it up in "Anomalies", do not improvise. | Report and wait. |
 
 ---
