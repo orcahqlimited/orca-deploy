@@ -66,6 +66,14 @@ Before AC starts Phase 1, ORCA HQ confirms HQ-side infrastructure is in the expe
 
 ### 0.1 — Live HQ endpoint health (always do this)
 
+> **v0.0.4 addition — upstream-config drift probe.** The foundry-proxy Worker now exposes `/health/upstream` (TASK-117, deployed 2026-04-27). It actively probes the upstream Azure Foundry endpoints every 15 min and on demand. Before starting the redeploy, run:
+>
+> ```bash
+> curl -sS https://foundry.orcahq.ai/health/upstream | jq
+> ```
+>
+> Expect `"drift": false` plus both `uks` and `swc` showing `"ok": true` and an Azure header in `detail` (e.g. `"azure header apim-request-id (status=404)"`). If `drift: true`, the Worker's `FOUNDRY_*_ENDPOINT` vars are pointing at the wrong host — STOP and tell HQ. Sunday 2026-04-26's outage symptom was exactly this state with no detection (closed by CL-ORCAHQ-0146 + TASK-117).
+
 ```bash
 for h in license.orcahq.ai telemetry.orcahq.ai support-api.orcahq.ai gateway.orcahq.ai foundry.orcahq.ai; do
   printf "%-25s " "$h"; curl -s -o /dev/null -w "%{http_code}\n" https://$h/health
@@ -213,6 +221,17 @@ Expected: completes with the "═══ Bootstrap complete ═══" banner and
 
 ### Step 2.2 — Run the installer
 
+> **v0.0.4 addition — paste-truncation guard.** AC's Sunday run hit a 442-byte licence (should have been 830) — almost certainly PowerShell + PSReadLine paste truncation. v0.2.4 doesn't catch this until `jwt.verify()` fails with the unactionable "invalid signature". Workaround for v0.2.4 operators: write the licence to a file FIRST, then bind-mount it. v0.3.0 ships native `ORCA_LICENCE_FILE` support (TASK-112) but for now use the env-var-pointing-at-mounted-file pattern:
+>
+> ```bash
+> # Save the licence to a file BEFORE the docker run (sidesteps paste truncation)
+> printf '%s' "<paste licence here once, in a plain editor not the shell>" > ~/orca/licence.jwt
+> chmod 600 ~/orca/licence.jwt
+> wc -c ~/orca/licence.jwt    # expect 600+ bytes for a healthy RS256 JWT
+> ```
+>
+> Then in the docker run below, replace `-e ORCA_LICENCE_KEY="<paste>"` with `-e ORCA_LICENCE_KEY="$(cat ~/orca/licence.jwt)"`. The shell's `$(cat ...)` substitution handles the multi-hundred-byte string without going through any PSReadLine / VS-Code-terminal paste path.
+
 ```bash
 docker run --rm -it \
   -v ~/.azure:/root/.azure \
@@ -351,6 +370,8 @@ az containerapp show \
 
 Expected: `https://foundry.orcahq.ai`.
 
+> **v0.0.4 addition — silent-fall-through caveat for v0.2.4.** v0.2.4's `configureFoundry()` swallows transport-class errors (TLS / ECONNRESET / DNS) as `s.warn` "licence-service unreachable — legacy Foundry-key path will be used" and proceeds. If you see that warn line in the installer output, the `foundry-customer-token` KV secret was NOT written and `FOUNDRY_ENDPOINT` may not have been set to `foundry.orcahq.ai`. The KV-secret-show in this step is the catch-all check — if it returns "secret not found", that's the failure mode from AC's Sunday run (CL-ORCAHQ-0146). Re-run the installer to retry; the step is idempotent. v0.3.0 (TASK-111) replaces this silent path with a 3-attempt retry plus a red `⚠ Foundry-Proxy Token NOT Issued — ACTION REQUIRED` summary panel, so this caveat goes away when the customer-facing image bumps.
+
 ### Step 3.5 — SQL access (load-bearing for PII tokenisation)
 
 ```bash
@@ -369,6 +390,8 @@ az containerapp logs show \
 ```
 
 If any line contains `ELOGIN`, `Login failed`, `principal "[orca-...-mi]" does not exist`, or `cannot open database` — STOP. This means the deployed gateway image has commit `1b09acd` (Entra-only SQL) but the customer SQL DB has not had `CREATE USER FROM EXTERNAL PROVIDER` run for the gateway MI. The HQ team has explicitly pinned `rc-1.0.0` to a commit BEFORE 1b09acd to prevent this — if you see this error, the pin has been reverted at HQ-end and HQ needs to know IMMEDIATELY.
+
+> **v0.0.4 forward-pointer — v0.3.0 customer-side SQL Entra grant.** TASK-103 / INTENT-108 §108-J customer-side ships `grantGatewayMiSqlAccess()` as a new install step (4a-bis). When the customer-facing `rc-1.0.0` ACR tag is bumped past `1b09acd` AND v0.3.0 of the installer is being used, this STOP line becomes unreachable in normal operation — the installer will have already created the `[orca-<customer>-mi]` SQL user with `db_datareader` + `db_datawriter` + `EXECUTE ON SCHEMA::dbo`. For v0.2.4 / current rc-1.0.0=5de7b4b runs (legacy SQL auth), the existing STOP guidance still applies. AC's Sunday redeploy was on legacy SQL auth and did not need this step.
 
 ### Step 3.6 — Foundry-key sunset preflight (do NOT execute)
 
@@ -465,16 +488,24 @@ but do contain resource topology that is sensitive.)
 | Phase 2 installer fails on Entra app reuse | Stale credential or consent state | Capture full output. STOP. HQ has runbook ORCAHQ-AGILE-DAY1-FIXUP for this class. |
 | Phase 3.5 SQL ELOGIN | rc-1.0.0 has been bumped past commit 1b09acd at HQ-end without installer support | STOP IMMEDIATELY. Tell HQ. They will retag rc-1.0.0 back to 5de7b4b and you re-run Phase 2. |
 | Phase 3.3 /mcp returns 5xx instead of 401 | Licence-service unreachable from customer gateway, or PEM mismatch | Capture body. Try `curl https://license.orcahq.ai/.well-known/jwks.json` from AC workstation — if that's also broken, HQ side is down. |
-| Customer gateway is unhealthy after Phase 3 and we want to roll back to the prior revision | Install caused a regression we don't immediately understand | Operator runs (single-revision mode is on, so Container Apps swaps active revision atomically): `az containerapp revision list -g rg-orca-${CUSTOMER_SLUG}-uks -n orca-mcp-gateway --query "[].{name:name,active:properties.active,image:properties.template.containers[0].image,createdTime:properties.createdTime}" -o table` to see all revisions; identify the previous revision (one before the active one in `createdTime` order); then `az containerapp ingress traffic set -g rg-orca-${CUSTOMER_SLUG}-uks -n orca-mcp-gateway --revision-weight <previous-revision>=100 latest=0`. After traffic shift, retry `/health` — should return 200 within 60s. STOP further phases, write up the rollback in the report's "Anomalies" section. (Note: `revision deactivate` works if the app is in multiple-revision mode; the traffic-weight command works in either mode.) |
+| Phase 3.4 `foundry-customer-token` KV secret not found | v0.2.4 `configureFoundry()` silently swallowed a transport error during install (CL-ORCAHQ-0146 / TASK-111) | Re-run the installer (idempotent — picks up existing KV / Entra state and retries the foundry-token call). If it fails twice with the same TLS / network symptom, run the manual fallback: `curl https://license.orcahq.ai/api/foundry/token -H "Authorization: Bearer <licence>" -H "Content-Type: application/json" -d '{"customer_slug":"<slug>"}'`, then `az keyvault secret set --vault-name kv-orca-<slug>-uks --name foundry-customer-token --value <returned-jwt>`. |
+| Phase 0.1 `/health/upstream` shows `drift: true` | Foundry-proxy Worker `FOUNDRY_*_ENDPOINT` vars stale (CL-ORCAHQ-0146 fix-up) | STOP, do NOT begin install. HQ Founder action: redeploy Worker after correcting `wrangler.toml`. The drift probe is a hard gate. |
 | Anything not in this table | Unknown — write it up in "Anomalies", do not improvise. | Report and wait. |
 
 ---
 
 ## Notes for the next iteration
 
-This runbook is v0.0.1. After AC's first run we expect to learn:
-- Which steps were ambiguous to AC's Claude.
-- What additional pre-state we wished we'd captured.
-- Whether the report template needs more or fewer fields.
+This runbook is **v0.0.4** (2026-04-27). Revision history:
 
-Capture those learnings in a CL- entry and revise this document accordingly.
+- **v0.0.1** (2026-04-25) — original draft for AC's Sunday 2026-04-26 redeploy.
+- **v0.0.2** (2026-04-26) — workload Container Apps don't carry the customer slug (`naming.ts` returns hardcoded names). Naming-note callout in Phase 1.2.
+- **v0.0.3** (2026-04-26) — docker container is the canonical install path (§104-O). The bundled `node dist/index.js` was deprecated to a sign-post stub. Updated Phase 2.2 docker invocation.
+- **v0.0.4** (2026-04-27) — applies AC Sunday-run learnings + this morning's PRs:
+  - Phase 0.1 adds the `https://foundry.orcahq.ai/health/upstream` drift probe (TASK-117 live 2026-04-27).
+  - Phase 2.2 adds the paste-truncation guard with the `~/orca/licence.jwt` workaround (TASK-112's `ORCA_LICENCE_FILE` is the v0.3.0 native fix; until then, file-mounted env-var substitution sidesteps PSReadLine / VS Code paste limits).
+  - Phase 3.4 adds the silent-fall-through caveat covering AC's actual Sunday symptom (`configureFoundry()` swallowed a TLS EOF; foundry-customer-token never written). Forward-pointer to TASK-111's v0.3.0 fix.
+  - Phase 3.5 adds the v0.3.0 forward-pointer for the new `grantGatewayMiSqlAccess()` install step (TASK-103). Until rc-1.0.0 is bumped past `1b09acd`, the existing STOP guidance still applies — that's exactly what AC's run hit.
+  - Failure-modes table picks up two new rows: Phase 3.4 missing-token recovery + Phase 0.1 drift-probe hard gate.
+
+Capture future learnings in a CL- entry and revise this document accordingly. The next major bump (v0.1.0?) lands when v0.3.0 of the installer ships and rc-1.0.0 moves past 1b09acd — at that point the legacy STOP gates in Phase 3.4 and 3.5 can be removed entirely and the runbook can simplify.
