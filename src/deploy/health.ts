@@ -2,6 +2,7 @@ import https from 'node:https';
 import type { DeployContext } from '../types.js';
 import * as naming from '../utils/naming.js';
 import * as log from '../utils/log.js';
+import { printIngestSummary } from './ingest.js';
 import chalk from 'chalk';
 
 function httpGet(url: string): Promise<number> {
@@ -102,6 +103,10 @@ export function printSummary(ctx: DeployContext): void {
     console.log(`    ${chalk.cyan('OAuth Client ID:')}  ${chalk.white(ctx.entraAppId!)}`);
     console.log(`    ${chalk.cyan('OAuth Secret:')}     ${chalk.white(ctx.entraClientSecret!)}`);
   }
+
+  // INTENT-106 — engagement-ingest panel + ready-to-run seed command.
+  //              No-op if the customer declined the prompt.
+  printIngestSummary(ctx);
 
   log.blank();
   log.divider();

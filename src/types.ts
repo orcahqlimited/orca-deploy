@@ -89,6 +89,15 @@ export interface DeployContext {
   // Foundry proxy customer token — issued by orca-license-service, stored
   // in customer KV, attached by the gateway to every foundry.orcahq.ai call.
   foundryCustomerToken?: string;
+  // orca-ingest optional install step (INTENT-106). Set once the user
+  // confirms the prompt, populated as the step progresses. Read by
+  // printSummary to surface the ready-to-run seed command.
+  ingestEnabled?: boolean;
+  ingestEntraAppId?: string;
+  ingestEntraClientId?: string;
+  ingestEnvFilePath?: string;
+  ingestImageRef?: string;
+  ingestConsentPending?: boolean;
   // Licence — verified at startup, written to KV as orca-license-master
   // during provisionLicenses. No offline-grace fallback.
   // Stable UUID for the install run, used to join phone-home events
