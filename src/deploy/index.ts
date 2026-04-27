@@ -4,6 +4,7 @@ import { createAcr } from './acr.js';
 import { createKeyVault } from './keyvault.js';
 import { createManagedIdentity } from './identity.js';
 import { createSqlServer } from './sql-server.js';
+import { grantGatewayMiSqlAccess } from './sql-entra.js';
 import { createPiiEncryptionKey } from './pii-encryption.js';
 import { createOrcaKek } from './kek.js';
 import { createCustomerStorage } from './customer-storage.js';
@@ -53,6 +54,15 @@ export async function deploy(ctx: DeployContext): Promise<void> {
     //          Must come before Step 5 so the gateway can bind the
     //          sql-connection-string secretRef at Container App creation.
     await createSqlServer(ctx);
+
+    // Step 4a-bis: Grant the gateway MI Entra access to orca-pii-vault
+    //              (INTENT-108 §108-J / TASK-103). Sets the deployer as
+    //              SQL Entra admin and runs CREATE USER FROM EXTERNAL
+    //              PROVIDER so the gateway image at rc-1.0.0+ (post
+    //              1b09acd) can authenticate via DefaultAzureCredential.
+    //              Idempotent + best-effort: never aborts the install,
+    //              prints manual fallback on failure.
+    await grantGatewayMiSqlAccess(ctx);
 
     // Step 4b: PII encryption key — AES-256 in Key Vault (INTENT-104 §104-C).
     //          Existence-guarded — never regenerated, rotation is separate.

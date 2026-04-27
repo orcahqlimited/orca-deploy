@@ -34,6 +34,7 @@ import { createEntraApp, updateEntraRedirectUris } from '../dist/deploy/entra.js
 import { assignDeployerFounderRole } from '../dist/deploy/rbac-graph.js';
 import { configureFoundry } from '../dist/deploy/foundry-proxy.js';
 import { provisionIngest } from '../dist/deploy/ingest.js';
+import { grantGatewayMiSqlAccess } from '../dist/deploy/sql-entra.js';
 import { generateAlphanumericPassword } from '../dist/utils/password.js';
 import fs from 'node:fs';
 
@@ -92,6 +93,9 @@ async function run() {
   // --- 104-A (SQL) ---
   await createSqlServer(ctx);
 
+  // --- 108-J / TASK-103 — gateway MI Entra-user grant on orca-pii-vault ---
+  await grantGatewayMiSqlAccess(ctx);
+
   // --- 104-C PII encryption key ---
   await createPiiEncryptionKey(ctx);
 
@@ -123,6 +127,34 @@ async function run() {
     const parts = kvRead.stdout.trim().split('.');
     console.log('[104-J-shape] parts=%d ok=%s', parts.length,
       parts.length === 3 && parts.every((p) => p.length > 0));
+  }
+
+  // --- 108-J / TASK-103 re-check: gateway MI exists as a SQL DB principal ---
+  // Asserts the database_principals row landed and the deployer-as-Entra-
+  // admin step succeeded. Both depend on sqlcmd being available; we surface
+  // the gap as a SKIPPED line rather than failing the regression.
+  const sqlcmdCheck = await execaCommand('which sqlcmd', { shell: true, reject: false });
+  if (sqlcmdCheck.exitCode === 0 && sqlcmdCheck.stdout.trim()) {
+    const tokenRes = await execaCommand(
+      'az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv',
+      { shell: true, reject: false },
+    );
+    if (tokenRes.exitCode === 0) {
+      const principalCheck = await execaCommand(
+        `SQLCMDPASSWORD='${tokenRes.stdout.trim()}' sqlcmd -S ${ctx.sqlServerFqdn} -d orca-pii-vault ` +
+          `-G --authentication-method=ActiveDirectoryAccessToken ` +
+          `-Q "SELECT name FROM sys.database_principals WHERE name = '${ctx.miName}'" -h -1 -W`,
+        { shell: true, reject: false, timeout: 60_000 },
+      );
+      const found =
+        principalCheck.exitCode === 0 &&
+        principalCheck.stdout.includes(ctx.miName);
+      console.log('[108-J] gateway MI', ctx.miName, 'is a DB principal:', found);
+    } else {
+      console.log('[108-J] SKIPPED — could not acquire SQL access token');
+    }
+  } else {
+    console.log('[108-J] SKIPPED — sqlcmd not on PATH');
   }
 
   // --- 104-H re-check: spa.redirectUris populated correctly ---
