@@ -68,22 +68,141 @@ function loadPublicKey(): string {
 }
 
 /**
- * Verify the licence in process.env.ORCA_LICENCE_KEY against the current
- * Azure signed-in tenant. Throws with a human-readable message on any
- * failure. Returns the parsed claims + the raw token on success.
+ * Resolve the licence token from the environment.
+ *
+ * Two paths, in priority order:
+ *   1. ORCA_LICENCE_FILE — path to a file containing the licence JWT.
+ *      Recommended when the host terminal (PowerShell + PSReadLine,
+ *      VS Code's paste limit, Win-cmd shells with line-length caps,
+ *      etc.) might truncate a pasted env var. Reads the file, trims
+ *      whitespace, returns the contents. This is the post-TASK-112
+ *      preferred path — file-based input bypasses every paste-
+ *      truncation surface we know about.
+ *   2. ORCA_LICENCE_KEY — the raw JWT in the env var. Continues to
+ *      work; we just gained a shape-check at the next step that
+ *      catches truncation explicitly instead of surfacing an
+ *      "invalid signature" error.
+ */
+function resolveLicenceToken(): { token: string; source: 'file' | 'env' } | null {
+  const file = process.env.ORCA_LICENCE_FILE;
+  if (file && file.trim().length > 0) {
+    try {
+      const body = fs.readFileSync(file.trim(), 'utf8');
+      return { token: body.trim(), source: 'file' };
+    } catch (err: any) {
+      throw new Error(
+        `ORCA_LICENCE_FILE is set to ${file} but the file could not be read: ${err.message}.\n` +
+        'Confirm the path (inside the container if running via docker -e) and that the file is mounted/readable.',
+      );
+    }
+  }
+  const env = process.env.ORCA_LICENCE_KEY;
+  if (env && env.trim().length > 0) {
+    return { token: env.trim(), source: 'env' };
+  }
+  return null;
+}
+
+/**
+ * Heuristic shape check on the supplied JWT. Catches the
+ * paste-truncation case (CL-from-AC redeploy 2026-04-26: licence
+ * arrived as 442 bytes when it should have been 830 — likely
+ * PowerShell + VS Code terminal paste limit). The native
+ * jwt.verify() error on a truncated signature is "invalid
+ * signature", which is unactionable. This check surfaces
+ * "your licence appears truncated" instead, with the file-based
+ * alternative as the recommended fix.
+ *
+ * RS256-2048 reference shapes:
+ *   - 3 dot-separated base64url parts
+ *   - signature part: 342–344 base64url chars (256 bytes × 4/3, no padding)
+ *   - total length: 600–1000+ bytes for our claim payload
+ *
+ * Anything under 500 bytes total or with a signature part under 300
+ * chars is almost certainly truncated. We're permissive at the
+ * upper end (no enforced max) to avoid false-positives on payload
+ * variations.
+ */
+function checkLicenceShape(token: string, source: 'file' | 'env'): void {
+  if (token.length < 200) {
+    throw new Error(
+      `Licence appears truncated — got ${token.length} bytes, expected 600+.\n` +
+      shapeRemediation(source),
+    );
+  }
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw new Error(
+      `Licence is malformed — JWTs have exactly 3 dot-separated parts, got ${parts.length}.\n` +
+      'Confirm you copied the full string from ORCA HQ (no extra whitespace, no leading "Bearer ").',
+    );
+  }
+  const [headerB64, payloadB64, sigB64] = parts;
+  if (!headerB64 || !payloadB64 || !sigB64) {
+    throw new Error(
+      'Licence is malformed — one of the three JWT parts is empty.\n' +
+      shapeRemediation(source),
+    );
+  }
+  if (sigB64.length < 300) {
+    throw new Error(
+      `Licence signature is too short (${sigB64.length} chars; RS256-2048 produces ~342). The licence is almost certainly truncated.\n` +
+      shapeRemediation(source),
+    );
+  }
+}
+
+function shapeRemediation(source: 'file' | 'env'): string {
+  if (source === 'file') {
+    return (
+      'Re-fetch the licence from ORCA HQ and confirm the file size matches what was sent.\n' +
+      'If you copy-pasted into the file, prefer downloading directly from the source.'
+    );
+  }
+  return (
+    'Cause is almost always paste truncation in PowerShell + PSReadLine, VS Code\n' +
+    'terminal paste limits, or shell history line-length caps.\n\n' +
+    'Recommended fix — write the licence to a file and use ORCA_LICENCE_FILE instead:\n\n' +
+    '  # Save the licence to ~/orca/licence.jwt (mode 0600 if you can)\n' +
+    '  docker run --rm -it -v ~/.azure:/root/.azure \\\n' +
+    '    -v ~/orca/licence.jwt:/orca/licence.jwt:ro \\\n' +
+    '    -e ORCA_LICENCE_FILE=/orca/licence.jwt \\\n' +
+    '    ghcr.io/orcahqlimited/orca-installer:latest\n\n' +
+    'File-based input bypasses every paste-truncation surface.'
+  );
+}
+
+/**
+ * Verify the licence in process.env.ORCA_LICENCE_KEY (or a file at
+ * ORCA_LICENCE_FILE) against the current Azure signed-in tenant.
+ * Throws with a human-readable message on any failure. Returns the
+ * parsed claims + the raw token on success.
  */
 export async function verifyLicence(): Promise<LicenceResult> {
-  const token = process.env.ORCA_LICENCE_KEY;
-  if (!token || token.trim().length === 0) {
+  const resolved = resolveLicenceToken();
+  if (!resolved) {
     throw new Error(
-      'ORCA_LICENCE_KEY is not set.\n\n' +
+      'ORCA_LICENCE_KEY (or ORCA_LICENCE_FILE) is not set.\n\n' +
       'Every install requires a licence issued by ORCA HQ. Ask your ORCA contact\n' +
-      'to issue one, then re-run with:\n\n' +
+      'to issue one, then re-run with one of:\n\n' +
+      '  # File-based (recommended — avoids paste-truncation surfaces)\n' +
+      '  docker run --rm -it -v ~/.azure:/root/.azure \\\n' +
+      '    -v ~/orca/licence.jwt:/orca/licence.jwt:ro \\\n' +
+      '    -e ORCA_LICENCE_FILE=/orca/licence.jwt \\\n' +
+      '    ghcr.io/orcahqlimited/orca-installer:latest\n\n' +
+      '  # Env var (only if the licence pastes cleanly into your shell)\n' +
       '  docker run --rm -it -v ~/.azure:/root/.azure \\\n' +
       '    -e ORCA_LICENCE_KEY=<your licence> \\\n' +
       '    ghcr.io/orcahqlimited/orca-installer:latest\n',
     );
   }
+
+  // TASK-112 — explicit shape check before jwt.verify(). Truncated
+  // licences would otherwise fail with the unactionable "invalid
+  // signature" error.
+  checkLicenceShape(resolved.token, resolved.source);
+
+  const token = resolved.token;
 
   let pem: string;
   try {
