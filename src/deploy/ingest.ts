@@ -89,6 +89,26 @@ export async function installIngest(ctx: DeployContext): Promise<void> {
     return;
   }
 
+  await provisionIngest(ctx, openaiKey.trim());
+}
+
+/**
+ * Provisioning core — same as installIngest minus the prompts. Exported so
+ * the 104-AA regression harness (and any future non-interactive caller) can
+ * exercise 106-B through 106-E without driving inquirer prompts.
+ *
+ * Sets ctx.ingestEnabled = true on entry; flips to false if the Entra app
+ * reg fails (no recovery path from there). All other failures surface as
+ * warns and let the install complete — the engagement-ingest tool is
+ * optional and never blocks the core install.
+ */
+export async function provisionIngest(
+  ctx: DeployContext,
+  openaiKey: string,
+): Promise<void> {
+  ctx.ingestEnabled = true;
+  ctx.ingestImageRef = `${INGEST_GHCR_REPO}:${INGEST_IMAGE_VERSION}`;
+
   // Step 1 — Entra app reg + Graph Sites.Read.All + admin consent.
   await provisionIngestEntraApp(ctx);
   if (!ctx.ingestEntraAppId) {
@@ -99,10 +119,10 @@ export async function installIngest(ctx: DeployContext): Promise<void> {
 
   // Step 2 — store OpenAI key in KV (after the app reg succeeded so we
   // don't litter KV with secrets for a half-provisioned tool).
-  await storeOpenAiKey(ctx, openaiKey.trim());
+  await storeOpenAiKey(ctx, openaiKey);
 
   // Step 3 — write ~/orca/ingest/.env (mode 0600).
-  await writeIngestEnvFile(ctx, openaiKey.trim());
+  await writeIngestEnvFile(ctx, openaiKey);
 
   // Step 4 — pull the pinned image, verify the digest is materialised.
   await pullIngestImage(ctx);

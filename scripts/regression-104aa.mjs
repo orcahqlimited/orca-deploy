@@ -20,6 +20,8 @@
 
 import { execaCommand } from 'execa';
 import crypto from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
 import { createResourceGroup } from '../dist/deploy/resource-group.js';
 import { createAcr } from '../dist/deploy/acr.js';
 import { createKeyVault } from '../dist/deploy/keyvault.js';
@@ -31,6 +33,7 @@ import { createCustomerStorage } from '../dist/deploy/customer-storage.js';
 import { createEntraApp, updateEntraRedirectUris } from '../dist/deploy/entra.js';
 import { assignDeployerFounderRole } from '../dist/deploy/rbac-graph.js';
 import { configureFoundry } from '../dist/deploy/foundry-proxy.js';
+import { provisionIngest } from '../dist/deploy/ingest.js';
 import { generateAlphanumericPassword } from '../dist/utils/password.js';
 import fs from 'node:fs';
 
@@ -133,13 +136,82 @@ async function run() {
   );
   console.log('[104-H] redirect URIs:', redirectCheck.stdout.trim());
 
+  // --- 106-A..F orca-ingest optional install step ---
+  // Drives the non-interactive provisioning core (provisionIngest) with a
+  // throwaway OpenAI key. Asserts:
+  //   - 106-B  Entra app reg "ORCA Engagement Ingest" exists (tenant-side)
+  //   - 106-C  KV secret ingest-graph-client-secret present, JWT-shape skipped
+  //            (it's a client secret, not a token)
+  //   - 106-D  ~/orca/ingest/.env written (mode 0600), AZURE_CLIENT_ID matches
+  //   - 106-E  docker pull ghcr.io/orcahqlimited/orca-ingest:<pinned> succeeds
+  //            (skipped if docker is not on PATH — flags the gap as a warning
+  //            rather than failing the regression, since the rest of the
+  //            assertions are still meaningful without docker)
+  const TEST_OPENAI_KEY = 'sk-regression-104aa-fake-key-do-not-use';
+  await provisionIngest(ctx, TEST_OPENAI_KEY);
+
+  // 106-B
+  const ingestApp = await execaCommand(
+    `az ad app list --display-name "ORCA Engagement Ingest" --query "[0].{appId:appId}" -o json`,
+    { shell: true, reject: false },
+  );
+  const ingestAppParsed = JSON.parse(ingestApp.stdout || 'null');
+  console.log('[106-B] ingest Entra app exists:', Boolean(ingestAppParsed?.appId),
+    'appId match:', ingestAppParsed?.appId === ctx.ingestEntraAppId);
+
+  // 106-C
+  const ingestSecret = await execaCommand(
+    `az keyvault secret show --vault-name ${ctx.keyVaultName} --name ingest-graph-client-secret --query value -o tsv`,
+    { shell: true, reject: false },
+  );
+  const secretLen = (ingestSecret.stdout || '').trim().length;
+  console.log('[106-C] KV ingest-graph-client-secret present:',
+    ingestSecret.exitCode === 0 && secretLen > 0, 'length:', secretLen);
+
+  // 106-D
+  const envPath = path.join(os.homedir(), 'orca', 'ingest', '.env');
+  let envOk = false;
+  let envMode = null;
+  let envClientIdMatch = false;
+  try {
+    const stat = fs.statSync(envPath);
+    envMode = (stat.mode & 0o777).toString(8);
+    envOk = stat.isFile();
+    if (envOk) {
+      const body = fs.readFileSync(envPath, 'utf8');
+      envClientIdMatch = body.includes(`AZURE_CLIENT_ID=${ctx.ingestEntraAppId}`);
+    }
+  } catch (err) {
+    console.log('[106-D] env stat failed:', err.message);
+  }
+  console.log('[106-D] ~/orca/ingest/.env exists:', envOk, 'mode:', envMode,
+    'AZURE_CLIENT_ID matches Entra app:', envClientIdMatch);
+
+  // 106-E
+  const dockerPath = await execaCommand('which docker', { shell: true, reject: false });
+  if (dockerPath.exitCode === 0 && dockerPath.stdout.trim()) {
+    const inspect = await execaCommand(
+      `docker image inspect ${ctx.ingestImageRef}`,
+      { shell: true, reject: false },
+    );
+    console.log('[106-E] docker image present:',
+      inspect.exitCode === 0, 'ref:', ctx.ingestImageRef);
+  } else {
+    console.log('[106-E] SKIPPED — docker not on PATH');
+  }
+
   console.log('\n--- REGRESSION SUMMARY ---');
   console.log('Resource group: ', ctx.resourceGroup);
   console.log('Entra app id:   ', ctx.entraAppId);
   console.log('SQL server fqdn:', ctx.sqlServerFqdn);
   console.log('Storage account:', ctx.storageAccountName);
   console.log('Foundry token:  ', ctx.foundryCustomerToken ? 'issued' : 'NOT issued');
+  console.log('Ingest Entra:   ', ctx.ingestEntraAppId || 'NOT created');
+  console.log('Ingest .env:    ', ctx.ingestEnvFilePath || 'NOT written');
+  console.log('Ingest image:   ', ctx.ingestImageRef || 'NOT pinned');
   console.log('\nNext: run `./scripts/regression-104aa-teardown.sh` to clean up.');
+  console.log('Teardown must also delete the "ORCA Engagement Ingest" Entra app reg');
+  console.log(`(az ad app delete --id ${ctx.ingestEntraAppId || '<not-created>'}) and rm ~/orca/ingest/.env.`);
 }
 
 run().catch((e) => {
