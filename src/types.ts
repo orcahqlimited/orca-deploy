@@ -98,6 +98,13 @@ export interface DeployContext {
   ingestEnvFilePath?: string;
   ingestImageRef?: string;
   ingestConsentPending?: boolean;
+  // TASK-111 — set when configureFoundry hit an error that left the
+  // customer KV without a foundry-customer-token. Surfaced in the
+  // install summary + phoned home so HQ + the deployer can see that
+  // the optional Foundry-proxy step needs a re-run before the gateway
+  // makes its first Foundry call.
+  foundryConfigureFailed?: boolean;
+  foundryConfigureFailReason?: string;
   // Licence — verified at startup, written to KV as orca-license-master
   // during provisionLicenses. No offline-grace fallback.
   // Stable UUID for the install run, used to join phone-home events
