@@ -1,0 +1,92 @@
+name: ADO sync
+
+# Bidirectional sync between this repo's PRs and Azure DevOps work items.
+# Triggers:
+#   - PR opened / updated   → comment on the linked work item with PR link, set state to Active
+#   - PR merged             → transition work item to Resolved (Founder closes manually after sprint review)
+#   - PR closed without merge → comment "PR closed without merge", revert state to New
+#
+# PR title MUST contain `AB#<nnn>` to be picked up. If absent, the workflow logs a warning
+# and exits 0 (does not block PR — the title-format check is a separate CI step).
+#
+# Secrets required at the ORG level (orcahqlimited):
+#   ADO_PAT — Personal Access Token with `Work Items: Read & Write` scope.
+#             Created by the Founder once at https://dev.azure.com/orcahq/_usersSettings/tokens
+#             and stored at https://github.com/organizations/orcahqlimited/settings/secrets/actions
+#
+# Reference: https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, closed]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: secrets.ADO_PAT != ''
+    steps:
+      - name: Extract AB# work-item id from PR title
+        id: extract
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if [[ "$PR_TITLE" =~ AB#([0-9]+) ]]; then
+            echo "work_item_id=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning ::PR title missing 'AB#<nnn>' — ADO sync skipped. Add the work-item reference to enable auto-link."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment + transition work item
+        if: steps.extract.outputs.found == 'true'
+        env:
+          ADO_PAT: ${{ secrets.ADO_PAT }}
+          WI: ${{ steps.extract.outputs.work_item_id }}
+          ACTION: ${{ github.event.action }}
+          MERGED: ${{ github.event.pull_request.merged }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ORG="orcahq"
+          PROJECT="ORCA-BUILD"
+          AUTH=$(printf ':%s' "$ADO_PAT" | base64 -w 0)
+
+          api() {
+            local method="$1"; shift
+            local path="$1"; shift
+            curl -fsS -X "$method" \
+              -H "Authorization: Basic $AUTH" \
+              -H "Content-Type: application/json-patch+json" \
+              "https://dev.azure.com/$ORG/$PROJECT/$path" "$@"
+          }
+
+          # Determine target state from PR action
+          if [[ "$ACTION" == "closed" && "$MERGED" == "true" ]]; then
+            STATE="Resolved"
+            COMMENT="PR merged: $PR_TITLE — $PR_URL"
+          elif [[ "$ACTION" == "closed" && "$MERGED" == "false" ]]; then
+            STATE="New"
+            COMMENT="PR closed without merge: $PR_TITLE — $PR_URL"
+          else
+            STATE="Active"
+            COMMENT="PR open: $PR_TITLE — $PR_URL ($REPO#$PR_NUM)"
+          fi
+
+          # PATCH the work item: set state + add a hyperlink
+          PATCH=$(cat <<EOF
+[
+  {"op":"add","path":"/fields/System.State","value":"$STATE"},
+  {"op":"add","path":"/relations/-","value":{"rel":"Hyperlink","url":"$PR_URL","attributes":{"comment":"$COMMENT"}}}
+]
+EOF
+          )
+          echo "Patching AB#$WI -> state=$STATE"
+          api PATCH "_apis/wit/workitems/$WI?api-version=7.1" --data-binary "$PATCH" | jq '.id, .fields."System.State"'
