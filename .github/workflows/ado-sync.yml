@@ -18,7 +18,7 @@ name: ADO sync
 
 on:
   pull_request:
-    types: [opened, edited, synchronize, closed]
+    types: [opened, edited, synchronize, reopened, closed]
 
 permissions:
   pull-requests: write
@@ -71,27 +71,46 @@ jobs:
               "https://dev.azure.com/$ORG/$PROJECT/$path" "$@"
           }
 
-          # Determine target state from PR action
+          # Determine target state from PR action.
+          # ADO Agile state machine forbids Active→New, so close-without-merge
+          # leaves the state alone and just records the close as a hyperlink +
+          # comment. Founder decides at sprint review whether to revert the
+          # work item to New or take a different action.
+          STATE_PATCH=true
           if [[ "$ACTION" == "closed" && "$MERGED" == "true" ]]; then
             STATE="Resolved"
             COMMENT="PR merged: $PR_TITLE — $PR_URL"
           elif [[ "$ACTION" == "closed" && "$MERGED" == "false" ]]; then
-            STATE="New"
-            COMMENT="PR closed without merge: $PR_TITLE — $PR_URL"
+            STATE_PATCH=false
+            COMMENT="PR closed WITHOUT merge: $PR_TITLE — $PR_URL (state unchanged; Founder decides at sprint review)"
+          elif [[ "$ACTION" == "reopened" ]]; then
+            STATE="Active"
+            COMMENT="PR reopened: $PR_TITLE — $PR_URL"
           else
             STATE="Active"
             COMMENT="PR open: $PR_TITLE — $PR_URL ($REPO#$PR_NUM)"
           fi
 
-          # PATCH the work item: set state + add a hyperlink. Build JSON via jq
-          # to avoid heredoc indentation traps inside the YAML block scalar.
-          PATCH=$(jq -nc \
-            --arg state "$STATE" \
-            --arg url "$PR_URL" \
-            --arg comment "$COMMENT" \
-            '[
-              {op:"add", path:"/fields/System.State", value:$state},
-              {op:"add", path:"/relations/-", value:{rel:"Hyperlink", url:$url, attributes:{comment:$comment}}}
-            ]')
-          echo "Patching AB#$WI -> state=$STATE"
+          # PATCH the work item. Build JSON via jq (heredoc indentation traps
+          # break the YAML block scalar). When STATE_PATCH=false, only add the
+          # hyperlink — no state op.
+          if [ "$STATE_PATCH" = "true" ]; then
+            PATCH=$(jq -nc \
+              --arg state "$STATE" \
+              --arg url "$PR_URL" \
+              --arg comment "$COMMENT" \
+              '[
+                {op:"add", path:"/fields/System.State", value:$state},
+                {op:"add", path:"/relations/-", value:{rel:"Hyperlink", url:$url, attributes:{comment:$comment}}}
+              ]')
+            echo "Patching AB#$WI -> state=$STATE"
+          else
+            PATCH=$(jq -nc \
+              --arg url "$PR_URL" \
+              --arg comment "$COMMENT" \
+              '[
+                {op:"add", path:"/relations/-", value:{rel:"Hyperlink", url:$url, attributes:{comment:$comment}}}
+              ]')
+            echo "Patching AB#$WI -> hyperlink only (no state change)"
+          fi
           api PATCH "_apis/wit/workitems/$WI?api-version=7.1" --data-binary "$PATCH" | jq '.id, .fields."System.State"'
