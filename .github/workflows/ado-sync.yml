@@ -83,13 +83,15 @@ jobs:
             COMMENT="PR open: $PR_TITLE — $PR_URL ($REPO#$PR_NUM)"
           fi
 
-          # PATCH the work item: set state + add a hyperlink
-          PATCH=$(cat <<EOF
-[
-  {"op":"add","path":"/fields/System.State","value":"$STATE"},
-  {"op":"add","path":"/relations/-","value":{"rel":"Hyperlink","url":"$PR_URL","attributes":{"comment":"$COMMENT"}}}
-]
-EOF
-          )
+          # PATCH the work item: set state + add a hyperlink. Build JSON via jq
+          # to avoid heredoc indentation traps inside the YAML block scalar.
+          PATCH=$(jq -nc \
+            --arg state "$STATE" \
+            --arg url "$PR_URL" \
+            --arg comment "$COMMENT" \
+            '[
+              {op:"add", path:"/fields/System.State", value:$state},
+              {op:"add", path:"/relations/-", value:{rel:"Hyperlink", url:$url, attributes:{comment:$comment}}}
+            ]')
           echo "Patching AB#$WI -> state=$STATE"
           api PATCH "_apis/wit/workitems/$WI?api-version=7.1" --data-binary "$PATCH" | jq '.id, .fields."System.State"'
