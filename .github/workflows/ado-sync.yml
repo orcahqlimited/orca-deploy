@@ -27,7 +27,6 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    if: secrets.ADO_PAT != ''
     steps:
       - name: Extract AB# work-item id from PR title
         id: extract
@@ -55,6 +54,10 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          if [ -z "${ADO_PAT}" ]; then
+            echo "::warning ::ADO_PAT org secret not set — sync skipped. Founder one-time setup at https://github.com/organizations/orcahqlimited/settings/secrets/actions"
+            exit 0
+          fi
           ORG="orcahq"
           PROJECT="ORCA-BUILD"
           AUTH=$(printf ':%s' "$ADO_PAT" | base64 -w 0)
