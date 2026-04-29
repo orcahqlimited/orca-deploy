@@ -28,24 +28,29 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract AB# work-item id from PR title
+      - name: Extract AB# work-item id(s) from PR title
         id: extract
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          if [[ "$PR_TITLE" =~ AB#([0-9]+) ]]; then
-            echo "work_item_id=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          # A PR can legitimately reference multiple work items
+          # (e.g. parent Bug + parent Story + a child Task). Capture them all.
+          IDS=$(echo "$PR_TITLE" | grep -oE 'AB#[0-9]+' | sed 's/AB#//' | sort -u | tr '\n' ' ')
+          IDS=$(echo "$IDS" | sed 's/ *$//')
+          if [ -n "$IDS" ]; then
+            echo "ids=$IDS" >> "$GITHUB_OUTPUT"
             echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Found work-item IDs: $IDS"
           else
             echo "::warning ::PR title missing 'AB#<nnn>' — ADO sync skipped. Add the work-item reference to enable auto-link."
             echo "found=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Comment + transition work item
+      - name: Comment + transition work item(s)
         if: steps.extract.outputs.found == 'true'
         env:
           ADO_PAT: ${{ secrets.ADO_PAT }}
-          WI: ${{ steps.extract.outputs.work_item_id }}
+          IDS: ${{ steps.extract.outputs.ids }}
           ACTION: ${{ github.event.action }}
           MERGED: ${{ github.event.pull_request.merged }}
           PR_URL: ${{ github.event.pull_request.html_url }}
@@ -53,7 +58,7 @@ jobs:
           PR_NUM: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           if [ -z "${ADO_PAT}" ]; then
             echo "::warning ::ADO_PAT org secret not set — sync skipped. Founder one-time setup at https://github.com/organizations/orcahqlimited/settings/secrets/actions"
             exit 0
@@ -62,21 +67,27 @@ jobs:
           PROJECT="ORCA-BUILD"
           AUTH=$(printf ':%s' "$ADO_PAT" | base64 -w 0)
 
-          api() {
-            local method="$1"; shift
-            local path="$1"; shift
-            curl -fsS -X "$method" \
+          api_patch() {
+            local wi="$1"
+            local payload="$2"
+            curl -sS -o /dev/null -w '%{http_code}' -X PATCH \
               -H "Authorization: Basic $AUTH" \
               -H "Content-Type: application/json-patch+json" \
-              "https://dev.azure.com/$ORG/$PROJECT/$path" "$@"
+              --data-binary "$payload" \
+              "https://dev.azure.com/$ORG/$PROJECT/_apis/wit/workitems/$wi?api-version=7.1"
+          }
+
+          api_get() {
+            curl -sS \
+              -H "Authorization: Basic $AUTH" \
+              "https://dev.azure.com/$ORG/$PROJECT/_apis/wit/workitems/$1?\$expand=relations&api-version=7.1"
           }
 
           # Determine target state from PR action.
           # ADO Agile state machine forbids Active→New, so close-without-merge
-          # leaves the state alone and just records the close as a hyperlink +
-          # comment. Founder decides at sprint review whether to revert the
-          # work item to New or take a different action.
+          # leaves the state alone and just records the close as a hyperlink.
           STATE_PATCH=true
+          STATE=""
           if [[ "$ACTION" == "closed" && "$MERGED" == "true" ]]; then
             STATE="Resolved"
             COMMENT="PR merged: $PR_TITLE — $PR_URL"
@@ -91,26 +102,53 @@ jobs:
             COMMENT="PR open: $PR_TITLE — $PR_URL ($REPO#$PR_NUM)"
           fi
 
-          # PATCH the work item. Build JSON via jq (heredoc indentation traps
-          # break the YAML block scalar). When STATE_PATCH=false, only add the
-          # hyperlink — no state op.
-          if [ "$STATE_PATCH" = "true" ]; then
+          # Idempotent per-id patch. Skip the state op if work item is already
+          # in target state. Skip the hyperlink op if a Hyperlink with the
+          # same URL already exists. ADO returns 400 on either no-op state
+          # transition or duplicate Hyperlink in some Agile process versions.
+          for WI in $IDS; do
+            echo "::group::AB#$WI"
+            ITEM=$(api_get "$WI")
+            if [ -z "$ITEM" ] || ! echo "$ITEM" | jq -e .id >/dev/null 2>&1; then
+              echo "::warning ::AB#$WI fetch failed — skipping."
+              echo "::endgroup::"
+              continue
+            fi
+            CURRENT_STATE=$(echo "$ITEM" | jq -r '.fields."System.State"')
+            HAS_LINK=$(echo "$ITEM" | jq --arg u "$PR_URL" '[.relations[]? | select(.rel=="Hyperlink" and .url==$u)] | length')
+            ADD_STATE_OP="false"
+            ADD_LINK_OP="false"
+            if [ "$STATE_PATCH" = "true" ] && [ "$CURRENT_STATE" != "$STATE" ]; then
+              ADD_STATE_OP="true"
+            fi
+            if [ "$HAS_LINK" = "0" ]; then
+              ADD_LINK_OP="true"
+            fi
+            if [ "$ADD_STATE_OP" = "false" ] && [ "$ADD_LINK_OP" = "false" ]; then
+              echo "AB#$WI: nothing to do (state=$CURRENT_STATE already=$STATE, link already present)."
+              echo "::endgroup::"
+              continue
+            fi
             PATCH=$(jq -nc \
               --arg state "$STATE" \
               --arg url "$PR_URL" \
               --arg comment "$COMMENT" \
-              '[
-                {op:"add", path:"/fields/System.State", value:$state},
-                {op:"add", path:"/relations/-", value:{rel:"Hyperlink", url:$url, attributes:{comment:$comment}}}
-              ]')
-            echo "Patching AB#$WI -> state=$STATE"
-          else
-            PATCH=$(jq -nc \
-              --arg url "$PR_URL" \
-              --arg comment "$COMMENT" \
-              '[
-                {op:"add", path:"/relations/-", value:{rel:"Hyperlink", url:$url, attributes:{comment:$comment}}}
-              ]')
-            echo "Patching AB#$WI -> hyperlink only (no state change)"
-          fi
-          api PATCH "_apis/wit/workitems/$WI?api-version=7.1" --data-binary "$PATCH" | jq '.id, .fields."System.State"'
+              --argjson add_state "$ADD_STATE_OP" \
+              --argjson add_link "$ADD_LINK_OP" \
+              '
+                ($add_state | if . then [{op:"add", path:"/fields/System.State", value:$state}] else [] end) +
+                ($add_link  | if . then [{op:"add", path:"/relations/-", value:{rel:"Hyperlink", url:$url, attributes:{comment:$comment}}}] else [] end)
+              ')
+            echo "AB#$WI: state=$CURRENT_STATE -> $([ "$ADD_STATE_OP" = "true" ] && echo "$STATE" || echo "$CURRENT_STATE"); link=$([ "$ADD_LINK_OP" = "true" ] && echo "add" || echo "skip")"
+            HTTP_CODE=$(api_patch "$WI" "$PATCH")
+            if [[ "$HTTP_CODE" =~ ^2 ]]; then
+              echo "AB#$WI: ok ($HTTP_CODE)"
+            else
+              echo "::warning ::AB#$WI: PATCH returned $HTTP_CODE"
+            fi
+            echo "::endgroup::"
+          done
+          # Per-item failures are warnings, not workflow blockers — the PR
+          # itself is independently reviewable. Hard exit only on global
+          # config / auth issues (caught above).
+          exit 0
