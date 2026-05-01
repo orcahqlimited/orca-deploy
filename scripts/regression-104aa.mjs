@@ -135,24 +135,16 @@ async function run() {
   // the gap as a SKIPPED line rather than failing the regression.
   const sqlcmdCheck = await execaCommand('which sqlcmd', { shell: true, reject: false });
   if (sqlcmdCheck.exitCode === 0 && sqlcmdCheck.stdout.trim()) {
-    const tokenRes = await execaCommand(
-      'az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv',
-      { shell: true, reject: false },
+    const principalCheck = await execaCommand(
+      `sqlcmd -S ${ctx.sqlServerFqdn} -d orca-pii-vault ` +
+        `--authentication-method=ActiveDirectoryAzCli ` +
+        `-Q "SELECT name FROM sys.database_principals WHERE name = '${ctx.miName}'" -h -1 -W`,
+      { shell: true, reject: false, timeout: 60_000 },
     );
-    if (tokenRes.exitCode === 0) {
-      const principalCheck = await execaCommand(
-        `SQLCMDPASSWORD='${tokenRes.stdout.trim()}' sqlcmd -S ${ctx.sqlServerFqdn} -d orca-pii-vault ` +
-          `-G --authentication-method=ActiveDirectoryAccessToken ` +
-          `-Q "SELECT name FROM sys.database_principals WHERE name = '${ctx.miName}'" -h -1 -W`,
-        { shell: true, reject: false, timeout: 60_000 },
-      );
-      const found =
-        principalCheck.exitCode === 0 &&
-        principalCheck.stdout.includes(ctx.miName);
-      console.log('[108-J] gateway MI', ctx.miName, 'is a DB principal:', found);
-    } else {
-      console.log('[108-J] SKIPPED — could not acquire SQL access token');
-    }
+    const found =
+      principalCheck.exitCode === 0 &&
+      principalCheck.stdout.includes(ctx.miName);
+    console.log('[108-J] gateway MI', ctx.miName, 'is a DB principal:', found);
   } else {
     console.log('[108-J] SKIPPED — sqlcmd not on PATH');
   }

@@ -48,7 +48,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execaCommand } from 'execa';
 import type { DeployContext } from '../types.js';
-import { az, azQuiet, azTsv } from '../utils/az.js';
+import { az, azTsv } from '../utils/az.js';
 import { SQL_PII_VAULT_DB } from '../utils/naming.js';
 import * as log from '../utils/log.js';
 
@@ -92,22 +92,13 @@ export async function grantGatewayMiSqlAccess(ctx: DeployContext): Promise<void>
 
   await ensureSqlEntraAdmin(ctx, founderUpn, founderOid);
 
-  // ─── Step 2: acquire a SQL access token ──────────────────────────────────
-  let token: string;
-  try {
-    token = await azTsv(
-      `account get-access-token --resource https://database.windows.net/ --query accessToken`,
-    );
-  } catch (err: any) {
-    s.fail(
-      `  SQL Entra: could not acquire SQL access token (${err.message}) — skipped`,
-    );
-    printManualFallback(ctx);
-    return;
-  }
-
-  // ─── Step 3: run CREATE USER + grants via sqlcmd ─────────────────────────
-  const ok = await runEntraDdl(ctx, token);
+  // ─── Step 2: run CREATE USER + grants via sqlcmd ─────────────────────────
+  // go-sqlcmd's ActiveDirectoryAzCli auth method has sqlcmd shell out to
+  // `az` for a fresh access token at connect time — no need to fetch one
+  // ourselves. The orca-installer image runs container-owned az login
+  // (104-O), so the same identity that ran ad-admin create above is the
+  // one sqlcmd authenticates as.
+  const ok = await runEntraDdl(ctx);
   if (ok) {
     s.succeed(
       `  Azure SQL: ${ctx.miName} is a database user in ${SQL_PII_VAULT_DB} (db_datareader + db_datawriter + EXECUTE ON dbo)`,
@@ -166,27 +157,27 @@ async function ensureSqlEntraAdmin(
 }
 
 /**
- * Run the CREATE USER DDL via sqlcmd with an Entra access token.
+ * Run the CREATE USER DDL via sqlcmd using the deployer's az-CLI login.
  *
- * Token is passed via environment variable so it doesn't appear on the
- * command line (procfs visibility, shell history). go-sqlcmd reads
- * `SQLCMDPASSWORD` for `--authentication-method=ActiveDirectoryAccessToken`
- * mode. The DDL is written to a temp file (mode 0600) and consumed via
- * `-i`; cleanup happens in `finally`.
+ * go-sqlcmd's `ActiveDirectoryAzCli` auth method invokes `az` internally
+ * to mint a SQL access token at connect time, so we don't have to acquire
+ * or pass one. The DDL is written to a temp file (mode 0600) and
+ * consumed via `-i`; cleanup happens in `finally`.
  *
- * Note: this requires go-sqlcmd (the Microsoft "sqlcmd" apt package),
- * not the older mssql-tools18 sqlcmd which has neither the
- * `--authentication-method` flag nor SQLCMDPASSWORD-as-access-token
- * support. The orca-installer Dockerfile installs the `sqlcmd` package
- * for this reason.
+ * This requires go-sqlcmd (Microsoft's cross-platform sqlcmd, installed
+ * from the GitHub releases tarball at /usr/local/bin/sqlcmd in the
+ * orca-installer image). The older mssql-tools18 sqlcmd at
+ * /opt/mssql-tools18/bin/sqlcmd has neither the `--authentication-method`
+ * flag nor an equivalent access-token path, so we depend on the PATH
+ * order putting go-sqlcmd first.
  *
  * Returns true if sqlcmd exited 0; false (with logs) on any failure.
  */
-async function runEntraDdl(ctx: DeployContext, token: string): Promise<boolean> {
+async function runEntraDdl(ctx: DeployContext): Promise<boolean> {
   // Verify sqlcmd is available before we write anything to disk.
   const which = await execaCommand('which sqlcmd', { shell: true, reject: false });
   if (which.exitCode !== 0 || !which.stdout.trim()) {
-    log.warn('    sqlcmd not on PATH — skipping; install mssql-tools or use the manual fallback below.');
+    log.warn('    sqlcmd not on PATH — skipping; install go-sqlcmd or use the manual fallback below.');
     return false;
   }
 
@@ -196,14 +187,13 @@ async function runEntraDdl(ctx: DeployContext, token: string): Promise<boolean> 
 
     const cmd =
       `sqlcmd -S ${ctx.sqlServerFqdn} -d ${SQL_PII_VAULT_DB} ` +
-      `--authentication-method=ActiveDirectoryAccessToken ` +
+      `--authentication-method=ActiveDirectoryAzCli ` +
       `-i ${ddlPath} -b`;
 
     const result = await execaCommand(cmd, {
       shell: true,
       timeout: 60_000,
       reject: false,
-      env: { ...process.env, SQLCMDPASSWORD: token },
     });
 
     if (result.exitCode === 0) {
@@ -233,11 +223,9 @@ async function runEntraDdl(ctx: DeployContext, token: string): Promise<boolean> 
 }
 
 function printManualFallback(ctx: DeployContext): void {
-  log.warn('    Manual fallback — run on any workstation with az login + sqlcmd:');
-  log.dim('      TOKEN=$(az account get-access-token \\');
-  log.dim('        --resource https://database.windows.net/ --query accessToken -o tsv)');
-  log.dim(`      SQLCMDPASSWORD=$TOKEN sqlcmd -S ${ctx.sqlServerFqdn} -d ${SQL_PII_VAULT_DB} \\`);
-  log.dim('        --authentication-method=ActiveDirectoryAccessToken -Q "');
+  log.warn('    Manual fallback — run on any workstation with az login + go-sqlcmd:');
+  log.dim(`      sqlcmd -S ${ctx.sqlServerFqdn} -d ${SQL_PII_VAULT_DB} \\`);
+  log.dim('        --authentication-method=ActiveDirectoryAzCli -Q "');
   log.dim(`        IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = '${ctx.miName}')`);
   log.dim('        BEGIN');
   log.dim(`          CREATE USER [${ctx.miName}] FROM EXTERNAL PROVIDER;`);
