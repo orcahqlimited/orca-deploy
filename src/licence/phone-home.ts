@@ -47,6 +47,13 @@ export interface InstallEvent {
   estate_ran?: boolean;
   estate_exit_code?: number | null;
   estate_report_path?: string;
+  // Foundry-proxy configure outcome (TASK-111). Set when configureFoundry
+  // hit a transport / HTTP / read-back failure that left the customer KV
+  // without a foundry-customer-token. Surfaced on every event after the
+  // Foundry step runs so HQ can spot installs that "completed" but ship
+  // a gateway that can't reach Foundry.
+  foundry_configure_failed?: boolean;
+  foundry_configure_fail_reason?: string;
 }
 
 function hostHash(): string {
@@ -114,6 +121,15 @@ export async function sendInstallEvent(
     connectors: ctx.selectedConnectors?.map((c) => c.slug) || [],
     host_hash: hostHash(),
     installer_version: INSTALLER_VERSION,
+    // TASK-111 — propagate the Foundry-proxy configure outcome onto every
+    // event after configureFoundry runs. Lets HQ flag installs that
+    // completed but shipped a gateway that can't reach Foundry.
+    ...(ctx.foundryConfigureFailed
+      ? {
+          foundry_configure_failed: true,
+          foundry_configure_fail_reason: ctx.foundryConfigureFailReason?.slice(0, 300),
+        }
+      : {}),
     ...extra,
   };
 

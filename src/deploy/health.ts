@@ -108,6 +108,26 @@ export function printSummary(ctx: DeployContext): void {
   //              No-op if the customer declined the prompt.
   printIngestSummary(ctx);
 
+  // TASK-111 — surface a Foundry-proxy configure failure so the deployer
+  // sees it even if the rest of the install reported green. Without this,
+  // a transport-level error in configureFoundry leaves the gateway with
+  // no foundry-customer-token and every Foundry call from it returns 401.
+  if (ctx.foundryConfigureFailed) {
+    log.blank();
+    log.divider();
+    console.log(chalk.red.bold('  ⚠ Foundry-Proxy Token NOT Issued — ACTION REQUIRED'));
+    log.divider();
+    console.log(`  Reason:       ${chalk.white(ctx.foundryConfigureFailReason || 'unknown')}`);
+    console.log(`  Impact:       ${chalk.yellow('gateway will return 401 on every Foundry call until resolved')}`);
+    log.blank();
+    console.log(chalk.dim('  Resolve before first use:'));
+    console.log(chalk.dim('    1. Confirm this host can reach https://license.orcahq.ai (corporate'));
+    console.log(chalk.dim('       proxies + TLS interception are the usual culprit).'));
+    console.log(chalk.dim('    2. Re-run `orca-deploy` (configureFoundry is idempotent).'));
+    console.log(chalk.dim('    3. Or run the manual fallback: see runbook'));
+    console.log(chalk.dim('       ORCAHQ-AC-CLAUDE-REDEPLOY-001 §3.5 for the curl recipe.'));
+  }
+
   log.blank();
   log.divider();
   console.log(chalk.dim.bold('  Coming Soon'));
