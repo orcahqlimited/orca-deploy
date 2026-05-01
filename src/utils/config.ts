@@ -107,3 +107,14 @@ export const CORE_PRODUCT_IMAGES = [
   'orca-governance-connector',
   'orca-license-service',
 ];
+
+// orca-ingest — optional engagement-brain bulk-seed tool (INTENT-106).
+// Pinned version — single-line bump to upgrade. Floating :latest is
+// rejected by spec because it can burn customers when we ship a
+// backwards-incompatible ingest release.
+export const INGEST_GHCR_REPO = 'ghcr.io/orcahqlimited/orca-ingest';
+export const INGEST_IMAGE_VERSION = 'v0.1.0';
+
+// Graph Sites.Read.All (Application) — required for the SharePoint source path
+// in orca-ingest. Permission ID is stable across tenants.
+export const INGEST_GRAPH_SITES_READ_ALL_ID = '332a536c-c7ef-4017-ab91-336970924f0d';

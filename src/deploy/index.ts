@@ -19,6 +19,7 @@ import { runHealthChecks, printSummary } from './health.js';
 import { runEstateReport } from './estate-report.js';
 import { provisionLicenses } from './licenses.js';
 import { configureFoundry } from './foundry-proxy.js';
+import { installIngest } from './ingest.js';
 import {
   createEligibilityGroup,
   addGraphPermissions,
@@ -130,14 +131,22 @@ export async function deploy(ctx: DeployContext): Promise<void> {
     log.blank();
     const healthy = await runHealthChecks(ctx);
 
-    if (healthy) {
-      printSummary(ctx);
-    } else {
+    if (!healthy) {
       log.blank();
       log.warn('Some health checks failed. Connectors may need a few minutes to start.');
       log.dim(`Check manually: curl https://{connector-fqdn}/health`);
-      printSummary(ctx);
     }
+
+    // Step 9b: Optional engagement-ingest install (INTENT-106). Single
+    //          prompt, default no. Provisions an Entra app reg + KV
+    //          secret + ~/orca/ingest/.env + pulls the pinned image.
+    //          Runs after health checks so the customer has a working
+    //          core stack before being asked about the optional tool;
+    //          runs before printSummary so the ready-to-run seed
+    //          command lands at the bottom of the install output.
+    await installIngest(ctx);
+
+    printSummary(ctx);
 
     // Step 10: Estate report (INTENT-104 §104-U). Runs the read-only
     //          scripts/orca-estate-report.ps1 to prove what actually exists
