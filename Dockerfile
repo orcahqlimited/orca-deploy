@@ -75,9 +75,27 @@ RUN curl -fsSL https://packages.microsoft.com/config/debian/12/packages-microsof
   && rm -f /tmp/packages-microsoft-prod.deb \
   && apt-get update \
   && apt-get install -y --no-install-recommends powershell \
-  && ACCEPT_EULA=Y apt-get install -y --no-install-recommends mssql-tools18 unixodbc-dev sqlcmd \
+  && ACCEPT_EULA=Y apt-get install -y --no-install-recommends mssql-tools18 unixodbc-dev bzip2 \
   && rm -rf /var/lib/apt/lists/* \
   && pwsh -NoProfile -Command "Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; Install-Module -Name MicrosoftTeams -Scope AllUsers -Force"
+
+# go-sqlcmd (Microsoft cross-platform sqlcmd, github.com/microsoft/go-sqlcmd).
+# The Debian 12 packages-microsoft-prod feed does not yet ship a `sqlcmd`
+# package, so we install the official release tarball directly.
+#
+# Required by src/deploy/sql-entra.ts (TASK-103 / INTENT-108 §108-J): the
+# gateway-MI Entra grant uses --authentication-method=ActiveDirectoryAccessToken
+# with SQLCMDPASSWORD set to a Bearer token, which mssql-tools18 sqlcmd does
+# not support. We therefore make /usr/local/bin/sqlcmd point at go-sqlcmd
+# (precedence on PATH); mssql-tools18 binaries remain at /opt/mssql-tools18/bin
+# for ODBC-driver consumers and any explicit-path callers.
+ARG GO_SQLCMD_VERSION=v1.10.0
+RUN curl -fsSL "https://github.com/microsoft/go-sqlcmd/releases/download/${GO_SQLCMD_VERSION}/sqlcmd-linux-amd64.tar.bz2" \
+      -o /tmp/sqlcmd.tar.bz2 \
+  && tar -xjf /tmp/sqlcmd.tar.bz2 -C /usr/local/bin sqlcmd \
+  && chmod +x /usr/local/bin/sqlcmd \
+  && rm -f /tmp/sqlcmd.tar.bz2 \
+  && /usr/local/bin/sqlcmd --version
 
 # Installer sources. dist/ contains the compiled JS, type decls, and the
 # licence public key (copied by the npm run build script). scripts/ carries
