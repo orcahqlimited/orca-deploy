@@ -169,10 +169,16 @@ async function ensureSqlEntraAdmin(
  * Run the CREATE USER DDL via sqlcmd with an Entra access token.
  *
  * Token is passed via environment variable so it doesn't appear on the
- * command line (procfs visibility, shell history). sqlcmd 18+ reads
- * `SQLCMDPASSWORD` for `-G --authentication-method=ActiveDirectoryAccessToken`
+ * command line (procfs visibility, shell history). go-sqlcmd reads
+ * `SQLCMDPASSWORD` for `--authentication-method=ActiveDirectoryAccessToken`
  * mode. The DDL is written to a temp file (mode 0600) and consumed via
  * `-i`; cleanup happens in `finally`.
+ *
+ * Note: this requires go-sqlcmd (the Microsoft "sqlcmd" apt package),
+ * not the older mssql-tools18 sqlcmd which has neither the
+ * `--authentication-method` flag nor SQLCMDPASSWORD-as-access-token
+ * support. The orca-installer Dockerfile installs the `sqlcmd` package
+ * for this reason.
  *
  * Returns true if sqlcmd exited 0; false (with logs) on any failure.
  */
@@ -190,7 +196,7 @@ async function runEntraDdl(ctx: DeployContext, token: string): Promise<boolean> 
 
     const cmd =
       `sqlcmd -S ${ctx.sqlServerFqdn} -d ${SQL_PII_VAULT_DB} ` +
-      `-G --authentication-method=ActiveDirectoryAccessToken ` +
+      `--authentication-method=ActiveDirectoryAccessToken ` +
       `-i ${ddlPath} -b`;
 
     const result = await execaCommand(cmd, {
@@ -231,7 +237,7 @@ function printManualFallback(ctx: DeployContext): void {
   log.dim('      TOKEN=$(az account get-access-token \\');
   log.dim('        --resource https://database.windows.net/ --query accessToken -o tsv)');
   log.dim(`      SQLCMDPASSWORD=$TOKEN sqlcmd -S ${ctx.sqlServerFqdn} -d ${SQL_PII_VAULT_DB} \\`);
-  log.dim('        -G --authentication-method=ActiveDirectoryAccessToken -Q "');
+  log.dim('        --authentication-method=ActiveDirectoryAccessToken -Q "');
   log.dim(`        IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = '${ctx.miName}')`);
   log.dim('        BEGIN');
   log.dim(`          CREATE USER [${ctx.miName}] FROM EXTERNAL PROVIDER;`);

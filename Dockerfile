@@ -75,8 +75,7 @@ RUN curl -fsSL https://packages.microsoft.com/config/debian/12/packages-microsof
   && rm -f /tmp/packages-microsoft-prod.deb \
   && apt-get update \
   && apt-get install -y --no-install-recommends powershell \
-  && ACCEPT_EULA=Y apt-get install -y --no-install-recommends mssql-tools18 unixodbc-dev \
-  && ln -sf /opt/mssql-tools18/bin/sqlcmd /usr/local/bin/sqlcmd \
+  && ACCEPT_EULA=Y apt-get install -y --no-install-recommends mssql-tools18 unixodbc-dev sqlcmd \
   && rm -rf /var/lib/apt/lists/* \
   && pwsh -NoProfile -Command "Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; Install-Module -Name MicrosoftTeams -Scope AllUsers -Force"
 
