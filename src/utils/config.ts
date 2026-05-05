@@ -54,8 +54,8 @@ export const CONNECTORS: ConnectorDef[] = [
   {
     slug: 'azure-security',
     name: 'Azure Security',
-    description: '41 tools — security posture (M365 + Microsoft Defender for Cloud), cost, advisor intelligence',
-    toolCount: 41,
+    description: '42 tools — security posture (M365 + Microsoft Defender for Cloud), cost, advisor intelligence',
+    toolCount: 42,
     image: 'orca-azure-security-connector',
     secrets: [
       { kv: 'security-graph-client-id', env: 'GRAPH_CLIENT_ID', label: 'Graph API Client ID (app registration with Security read permissions)', masked: false },
@@ -96,7 +96,7 @@ export const IMAGE_TAGS: Record<string, string> = {
   'orca-freshworks-connector': 'rc-1.0.2',
   'orca-isms-connector': 'rc-1.0.2',
   'orca-ado-connector': 'rc-1.0.3',
-  'orca-azure-security-connector': 'rc-1.0.1',
+  'orca-azure-security-connector': 'rc-1.0.2',
   // Core product images — pinned tags, updated on each CLI release
   'orca-mcp-gateway': 'rc-1.0.0',
   'orca-copilot': 'rc-1.0.0',
