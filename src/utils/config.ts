@@ -54,8 +54,8 @@ export const CONNECTORS: ConnectorDef[] = [
   {
     slug: 'azure-security',
     name: 'Azure Security',
-    description: '36 tools — security posture, cost, and advisor intelligence (Microsoft Graph)',
-    toolCount: 36,
+    description: '41 tools — security posture (M365 + Microsoft Defender for Cloud), cost, advisor intelligence',
+    toolCount: 41,
     image: 'orca-azure-security-connector',
     secrets: [
       { kv: 'security-graph-client-id', env: 'GRAPH_CLIENT_ID', label: 'Graph API Client ID (app registration with Security read permissions)', masked: false },
@@ -84,12 +84,19 @@ export const ENTRA_APP_ROLES = [
 // ado_blocked_work_items was not escaping single quotes before WIQL splice.
 // Finding surfaced by orca-reviewer (Qwen3-Coder overnight pass) and caught
 // pre-ship of first customer (AgileCadence).
+//
+// orca-azure-security-connector bumped rc-1.0.0 -> rc-1.0.1 on 2026-05-05
+// (commit 961dd08 in connector repo) to add 5 Microsoft Defender for Cloud
+// tools (security_defender_cloud_*) — the prior connector only exposed M365
+// Secure Score via Graph and could not surface Azure infra posture. AB#5119
+// AB#5120. Per CL-ORCAHQ-0142 every score response now carries _source so
+// workforce agents cite which product the data comes from.
 export const IMAGE_TAGS: Record<string, string> = {
   'orca-freeagent-connector': 'rc-1.0.2',
   'orca-freshworks-connector': 'rc-1.0.2',
   'orca-isms-connector': 'rc-1.0.2',
   'orca-ado-connector': 'rc-1.0.3',
-  'orca-azure-security-connector': 'rc-1.0.0',
+  'orca-azure-security-connector': 'rc-1.0.1',
   // Core product images — pinned tags, updated on each CLI release
   'orca-mcp-gateway': 'rc-1.0.0',
   'orca-copilot': 'rc-1.0.0',
