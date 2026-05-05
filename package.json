@@ -1,6 +1,6 @@
 {
   "name": "@orcahq/deploy",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "ORCA Intelligence Connectors — Deployment CLI",
   "type": "module",
   "bin": {
