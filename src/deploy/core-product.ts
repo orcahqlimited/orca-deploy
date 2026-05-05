@@ -367,22 +367,20 @@ export async function deployCopilot(ctx: DeployContext): Promise<void> {
 
   const s = log.spinner(`Creating ${appName} Container App`);
 
-  // Plain env vars — matches orca-copilot/infra/bicep/copilot.bicep minus
-  // UAMI-specific fields. We use SingleTenant bot auth (CL-ORCAHQ-0111), so
-  // the bot appId is the Entra app, not the UAMI clientId.
+  // Plain env vars. Bot Framework Agents SDK (@microsoft/agents-hosting)
+  // reads ONLY camelCase env vars in `loadAuthConfigFromEnv()`:
+  //   clientId, tenantId, clientSecret, FICClientId, certPemFile, ...
+  // The legacy MICROSOFT_APP_* / MicrosoftApp* names are NOT read by the SDK.
+  // Setting AZURE_CLIENT_ID at the bot also bleeds into DefaultAzureCredential
+  // and pushes the SDK down the managed-identity fallback path. See
+  // CL-ORCAHQ-0111 (revised 2026-05-05) for the full diagnostic chain.
   const plainEnvVars = [
     'NODE_ENV=production',
     'DEV_MODE=false',
     'PORT=3978',
     'APPINSIGHTS_ENABLE_REQUEST_BODY=false',
-    `AZURE_CLIENT_ID=${ctx.miClientId}`,
     `clientId=${ctx.copilotEntraAppId}`,
     `tenantId=${ctx.tenantId}`,
-    `MicrosoftAppId=${ctx.copilotEntraAppId}`,
-    `MicrosoftAppTenantId=${ctx.tenantId}`,
-    'MICROSOFT_APP_TYPE=SingleTenant',
-    `MICROSOFT_APP_ID=${ctx.copilotEntraAppId}`,
-    `MICROSOFT_APP_TENANT_ID=${ctx.tenantId}`,
     `KEY_VAULT_NAME=${ctx.keyVaultName}`,
     `FOUNDRY_ENDPOINT_PRIMARY=${FOUNDRY_ENDPOINT_PRIMARY}/`,
     `FOUNDRY_ENDPOINT_SECONDARY=${FOUNDRY_ENDPOINT_SWC}/`,
@@ -460,7 +458,7 @@ export async function deployCopilot(ctx: DeployContext): Promise<void> {
   // Full env var set with secretRefs + runtime-resolved FQDNs
   const allEnvVars = [
     ...plainEnvVars,
-    'MICROSOFT_APP_PASSWORD=secretref:copilot-client-secret',
+    'clientSecret=secretref:copilot-client-secret',
     `NOTIFICATION_ENDPOINT=${ctx.copilotUrl}/api/notifications`,
   ];
   if (ctx.heartbeatSecret) {
