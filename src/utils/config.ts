@@ -62,6 +62,19 @@ export const CONNECTORS: ConnectorDef[] = [
       { kv: 'security-graph-client-secret', env: 'GRAPH_CLIENT_SECRET', label: 'Graph API Client Secret', masked: true },
     ],
   },
+  {
+    slug: 'crayon',
+    name: 'Crayon CSP Licensing',
+    description: '5 tools — CSP licence visibility, catalogue cost+RRP pricing, renewals, NCE part-month proration (read-only). Customer supplies their own Crayon API client + service-account.',
+    toolCount: 5,
+    image: 'orca-crayon-connector',
+    secrets: [
+      { kv: 'crayon-client-id', env: 'CRAYON_CLIENT_ID', label: 'Crayon API Client ID', masked: false },
+      { kv: 'crayon-client-secret', env: 'CRAYON_CLIENT_SECRET', label: 'Crayon API Client Secret', masked: true },
+      { kv: 'crayon-username', env: 'CRAYON_USERNAME', label: 'Crayon service-account username (ResourcePasswordFlow)', masked: false },
+      { kv: 'crayon-password', env: 'CRAYON_PASSWORD', label: 'Crayon service-account password', masked: true },
+    ],
+  },
 ];
 
 // Entra App Roles — created on every deployment
@@ -97,6 +110,7 @@ export const IMAGE_TAGS: Record<string, string> = {
   'orca-isms-connector': 'rc-1.0.2',
   'orca-ado-connector': 'rc-1.0.3',
   'orca-azure-security-connector': 'rc-1.0.2',
+  'orca-crayon-connector': 'rc-1.0.0',
   // Core product images — pinned tags, updated on each CLI release
   'orca-mcp-gateway': 'rc-1.0.0',
   'orca-copilot': 'rc-1.0.0',
