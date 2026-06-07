@@ -65,8 +65,8 @@ export const CONNECTORS: ConnectorDef[] = [
   {
     slug: 'crayon',
     name: 'Crayon CSP Licensing',
-    description: '5 tools — CSP licence visibility, catalogue cost+RRP pricing, renewals, NCE part-month proration (read-only). Customer supplies their own Crayon API client + service-account.',
-    toolCount: 5,
+    description: '7 tools — CSP licence visibility, catalogue cost+RRP pricing, renewals, NCE part-month proration, plus M365 SKU lookup/compare from Microsoft\'s licensing data (read-only). Customer supplies their own Crayon API client + service-account.',
+    toolCount: 7,
     image: 'orca-crayon-connector',
     secrets: [
       { kv: 'crayon-client-id', env: 'CRAYON_CLIENT_ID', label: 'Crayon API Client ID', masked: false },
